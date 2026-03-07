@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<DeviceInfo xmlns="http://www.hikvision.com/ver20/XMLSchema">
+    <deviceName>Office NVR</deviceName>
+    <deviceID>nvr-01</deviceID>
+    <model>DS-7608NI-K2</model>
+    <serialNumber>DS-7608NI-K2202012345</serialNumber>
+    <macAddress>aa:bb:cc:dd:ee:ff</macAddress>
+    <firmwareVersion>V4.30.085 build 200916</firmwareVersion>
+    <deviceType>NVR</deviceType>
+</DeviceInfo>

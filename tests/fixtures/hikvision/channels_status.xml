@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<InputProxyChannelStatusList xmlns="http://www.hikvision.com/ver20/XMLSchema">
+    <InputProxyChannelStatus>
+        <id>1</id>
+        <name>Front Door</name>
+        <sourceInputPortDescriptor>
+            <ipAddress>192.168.1.10</ipAddress>
+            <managePortNo>8000</managePortNo>
+        </sourceInputPortDescriptor>
+        <online>true</online>
+    </InputProxyChannelStatus>
+    <InputProxyChannelStatus>
+        <id>2</id>
+        <name>Back Yard</name>
+        <sourceInputPortDescriptor>
+            <ipAddress>192.168.1.11</ipAddress>
+            <managePortNo>8000</managePortNo>
+        </sourceInputPortDescriptor>
+        <online>false</online>
+    </InputProxyChannelStatus>
+</InputProxyChannelStatusList>

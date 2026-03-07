@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<HDDList xmlns="http://www.hikvision.com/ver20/XMLSchema">
+    <HDD>
+        <id>1</id>
+        <hddName>hdd1</hddName>
+        <hddType>SATA</hddType>
+        <status>ok</status>
+        <capacity>2000</capacity>
+        <freeSpace>500</freeSpace>
+        <property>RW</property>
+    </HDD>
+</HDDList>
