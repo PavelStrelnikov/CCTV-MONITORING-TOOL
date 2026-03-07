@@ -10,6 +10,15 @@ class DeviceCreate(BaseModel):
     username: str
     password: str
 
+class DeviceUpdate(BaseModel):
+    name: str | None = None
+    host: str | None = None
+    port: int | None = None
+    username: str | None = None
+    password: str | None = None
+    is_active: bool | None = None
+
+
 class HealthSummaryOut(BaseModel):
     reachable: bool
     camera_count: int

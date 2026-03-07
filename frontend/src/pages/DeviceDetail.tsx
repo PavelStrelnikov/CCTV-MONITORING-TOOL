@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { api } from '../api/client';
 import StatusBadge from '../components/StatusBadge';
 import type { DeviceDetail as DeviceDetailType, PollResult } from '../types';
@@ -66,6 +66,9 @@ export default function DeviceDetail() {
           <button className="btn-primary" onClick={handlePoll} disabled={polling}>
             {polling ? 'Polling...' : 'Poll Now'}
           </button>
+          <Link to={`/devices/${deviceId}/edit`}>
+            <button className="btn-secondary">Edit</button>
+          </Link>
           <button className="btn-danger" onClick={handleDelete}>Delete</button>
         </div>
       </div>

@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from cctv_monitor.api.deps import get_session, get_settings, get_driver_registry, get_http_client
 from cctv_monitor.api.schemas import (
-    DeviceCreate, DeviceOut, DeviceDetailOut, PollResultOut,
+    DeviceCreate, DeviceUpdate, DeviceOut, DeviceDetailOut, PollResultOut,
     HealthSummaryOut, AlertOut,
 )
 from cctv_monitor.core.config import Settings
@@ -49,8 +49,11 @@ async def create_device(
     try:
         await repo.create(device)
         await session.commit()
-    except IntegrityError:
+    except IntegrityError as exc:
         await session.rollback()
+        err = str(exc.orig) if exc.orig else str(exc)
+        if "polling_policies" in err or "foreign key" in err.lower():
+            raise HTTPException(status_code=500, detail="Polling policy 'standard' not found. Run seed first.")
         raise HTTPException(status_code=409, detail=f"Device '{body.device_id}' already exists")
     return DeviceOut(
         device_id=device.device_id, name=device.name, vendor=device.vendor,
@@ -65,6 +68,29 @@ async def delete_device(device_id: str, session: AsyncSession = Depends(get_sess
     if not deleted:
         raise HTTPException(status_code=404, detail="Device not found")
     await session.commit()
+
+
+@router.patch("/devices/{device_id}", response_model=DeviceOut)
+async def update_device(
+    device_id: str,
+    body: DeviceUpdate,
+    session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+):
+    repo = DeviceRepository(session)
+    fields = body.model_dump(exclude_unset=True)
+    if "password" in fields:
+        fields["password_encrypted"] = encrypt_value(fields.pop("password"), settings.ENCRYPTION_KEY)
+    if not fields:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    device = await repo.update(device_id, **fields)
+    if device is None:
+        raise HTTPException(status_code=404, detail="Device not found")
+    await session.commit()
+    return DeviceOut(
+        device_id=device.device_id, name=device.name, vendor=device.vendor,
+        host=device.host, port=device.port, is_active=device.is_active, last_health=None,
+    )
 
 
 @router.get("/devices/{device_id}", response_model=DeviceDetailOut)

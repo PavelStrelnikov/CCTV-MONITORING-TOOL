@@ -30,6 +30,15 @@ class DeviceRepository:
         self._session.add(device)
         await self._session.flush()
 
+    async def update(self, device_id: str, **fields) -> DeviceTable | None:
+        device = await self.get_by_id(device_id)
+        if device is None:
+            return None
+        for key, value in fields.items():
+            setattr(device, key, value)
+        await self._session.flush()
+        return device
+
     async def delete(self, device_id: str) -> bool:
         device = await self.get_by_id(device_id)
         if device is None:

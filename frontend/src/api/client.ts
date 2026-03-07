@@ -1,4 +1,4 @@
-import type { Device, DeviceCreate, DeviceDetail, PollResult, Overview } from '../types';
+import type { Device, DeviceCreate, DeviceUpdate, DeviceDetail, PollResult, Overview } from '../types';
 
 const BASE = '/api';
 
@@ -21,6 +21,12 @@ export const api = {
   createDevice: (data: DeviceCreate) =>
     request<Device>('/devices', {
       method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  updateDevice: (deviceId: string, data: DeviceUpdate) =>
+    request<Device>(`/devices/${deviceId}`, {
+      method: 'PATCH',
       body: JSON.stringify(data),
     }),
 

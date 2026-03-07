@@ -14,8 +14,22 @@ from cctv_monitor.drivers.registry import DriverRegistry
 from cctv_monitor.metrics.collector import MetricsCollector
 from cctv_monitor.polling.scheduler import create_scheduler
 from cctv_monitor.storage.database import create_engine, create_session_factory
+from cctv_monitor.storage.tables import PollingPolicyTable
 
 logger = structlog.get_logger()
+
+
+async def _ensure_default_policy(session_factory) -> None:
+    """Insert default polling policy if it doesn't exist."""
+    from sqlalchemy import select
+    async with session_factory() as session:
+        result = await session.execute(
+            select(PollingPolicyTable).where(PollingPolicyTable.name == "standard")
+        )
+        if result.scalar_one_or_none() is None:
+            session.add(PollingPolicyTable(name="standard"))
+            await session.commit()
+            logger.info("seed.default_policy_created")
 
 
 async def main() -> None:
@@ -32,6 +46,9 @@ async def main() -> None:
     # Database
     engine = create_engine(settings.database_url)
     session_factory = create_session_factory(engine)
+
+    # Ensure default polling policy exists
+    await _ensure_default_policy(session_factory)
 
     # Driver registry
     registry = DriverRegistry()
@@ -54,7 +71,7 @@ async def main() -> None:
 
     logger.info("cctv_monitor.started")
 
-    config = uvicorn.Config(app, host="0.0.0.0", port=8000, log_level="info")
+    config = uvicorn.Config(app, host="0.0.0.0", port=8001, log_level="info")
     server = uvicorn.Server(config)
     try:
         await server.serve()

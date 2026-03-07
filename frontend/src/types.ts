@@ -62,6 +62,15 @@ export interface DeviceCreate {
   password: string;
 }
 
+export interface DeviceUpdate {
+  name?: string;
+  host?: string;
+  port?: number;
+  username?: string;
+  password?: string;
+  is_active?: boolean;
+}
+
 export interface PollResult {
   device_id: string;
   health: HealthSummary;

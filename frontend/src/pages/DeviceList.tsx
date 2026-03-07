@@ -121,6 +121,9 @@ export default function DeviceList() {
                   >
                     {polling === d.device_id ? 'Polling...' : 'Poll'}
                   </button>
+                  <Link to={`/devices/${d.device_id}/edit`}>
+                    <button className="btn-secondary">Edit</button>
+                  </Link>
                   <button
                     className="btn-danger"
                     onClick={() => handleDelete(d.device_id)}
