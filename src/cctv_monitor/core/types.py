@@ -62,3 +62,11 @@ class AlertType(StrEnum):
 class AlertStatus(StrEnum):
     ACTIVE = "active"
     RESOLVED = "resolved"
+
+
+class CheckType(StrEnum):
+    DEVICE_INFO = "device_info"
+    CAMERA_STATUS = "camera_status"
+    DISK_STATUS = "disk_status"
+    RECORDING_STATUS = "recording_status"
+    SNAPSHOT = "snapshot"
