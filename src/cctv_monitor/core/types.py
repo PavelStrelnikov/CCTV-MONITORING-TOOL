@@ -50,3 +50,15 @@ class AlertSeverity(StrEnum):
     INFO = "info"
     WARNING = "warning"
     CRITICAL = "critical"
+
+
+class AlertType(StrEnum):
+    DEVICE_UNREACHABLE = "device_unreachable"
+    CAMERA_OFFLINE = "camera_offline"
+    DISK_ERROR = "disk_error"
+    RECORDING_STOPPED = "recording_stopped"
+
+
+class AlertStatus(StrEnum):
+    ACTIVE = "active"
+    RESOLVED = "resolved"
