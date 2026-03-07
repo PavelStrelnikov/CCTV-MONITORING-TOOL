@@ -22,6 +22,22 @@ class DeviceRepository:
         )
         return result.scalar_one_or_none()
 
+    async def list_all(self) -> list[DeviceTable]:
+        result = await self._session.execute(select(DeviceTable))
+        return list(result.scalars().all())
+
+    async def create(self, device: DeviceTable) -> None:
+        self._session.add(device)
+        await self._session.flush()
+
+    async def delete(self, device_id: str) -> bool:
+        device = await self.get_by_id(device_id)
+        if device is None:
+            return False
+        await self._session.delete(device)
+        await self._session.flush()
+        return True
+
 
 class CheckResultRepository:
     def __init__(self, session: AsyncSession) -> None:
