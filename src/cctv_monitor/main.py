@@ -27,11 +27,11 @@ async def main() -> None:
 
     settings = Settings()  # type: ignore[call-arg]
     http_client = HttpClientManager()
-    metrics = MetricsCollector()  # noqa: F841 — used by polling jobs
+    metrics = MetricsCollector()
 
     # Database
     engine = create_engine(settings.database_url)
-    session_factory = create_session_factory(engine)  # noqa: F841 — used by repositories
+    session_factory = create_session_factory(engine)
 
     # Driver registry
     registry = DriverRegistry()
@@ -43,6 +43,14 @@ async def main() -> None:
 
     # API
     app = create_app()
+
+    # Store shared state on app for dependency injection
+    app.state.settings = settings
+    app.state.session_factory = session_factory
+    app.state.driver_registry = registry
+    app.state.http_client = http_client
+    app.state.metrics = metrics
+    app.state.scheduler = scheduler
 
     logger.info("cctv_monitor.started")
 

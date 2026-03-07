@@ -1,8 +1,23 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 
 def create_app() -> FastAPI:
     app = FastAPI(title="CCTV Monitor", version="0.1.0")
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["http://localhost:5173"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    from cctv_monitor.api.routes.devices import router as devices_router
+    from cctv_monitor.api.routes.status import router as status_router
+
+    app.include_router(devices_router, prefix="/api")
+    app.include_router(status_router, prefix="/api")
 
     @app.get("/health")
     async def health():
