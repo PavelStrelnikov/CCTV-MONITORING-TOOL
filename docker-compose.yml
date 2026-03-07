@@ -1,0 +1,20 @@
+services:
+  cctv_monitoring_postgres:
+    image: postgres:16
+    container_name: cctv_monitoring_postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-cctv_monitoring}
+      POSTGRES_USER: ${POSTGRES_USER:-cctv_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-cctv_admin} -d ${POSTGRES_DB:-cctv_monitoring}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:
