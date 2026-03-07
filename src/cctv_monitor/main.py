@@ -27,11 +27,11 @@ async def main() -> None:
 
     settings = Settings()  # type: ignore[call-arg]
     http_client = HttpClientManager()
-    metrics = MetricsCollector()
+    metrics = MetricsCollector()  # noqa: F841 — used by polling jobs
 
     # Database
     engine = create_engine(settings.database_url)
-    session_factory = create_session_factory(engine)
+    session_factory = create_session_factory(engine)  # noqa: F841 — used by repositories
 
     # Driver registry
     registry = DriverRegistry()

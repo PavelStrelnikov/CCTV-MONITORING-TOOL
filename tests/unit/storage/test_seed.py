@@ -1,4 +1,3 @@
-from pathlib import Path
 from cctv_monitor.storage.seed import parse_seed_file
 
 

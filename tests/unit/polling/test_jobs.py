@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 from datetime import datetime, timezone
 from cctv_monitor.polling.jobs import poll_device_health
 from cctv_monitor.models.device import DeviceConfig

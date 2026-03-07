@@ -3,7 +3,6 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from cctv_monitor.storage.tables import (
     DeviceTable, CheckResultTable, AlertTable, SnapshotTable,
-    DeviceCapabilityTable, PollingPolicyTable,
 )
 
 

@@ -1,4 +1,3 @@
-import pytest
 from cctv_monitor.core.http_client import HttpClientManager
 
 

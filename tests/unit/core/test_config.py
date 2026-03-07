@@ -1,4 +1,3 @@
-import os
 from cctv_monitor.core.config import Settings
 
 

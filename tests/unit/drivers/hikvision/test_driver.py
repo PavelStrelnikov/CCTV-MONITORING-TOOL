@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock
 from pathlib import Path
 from cctv_monitor.drivers.hikvision.driver import HikvisionDriver
 from cctv_monitor.models.device import DeviceConfig
-from cctv_monitor.core.types import DeviceVendor, DeviceTransport, CameraStatus, DiskStatus
+from cctv_monitor.core.types import DeviceVendor, DeviceTransport, CameraStatus
 
 FIXTURES = Path(__file__).parent.parent.parent.parent / "fixtures" / "hikvision"
 
