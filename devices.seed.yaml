@@ -1,0 +1,29 @@
+polling_policies:
+  - name: light
+    device_info_interval: 600
+    camera_status_interval: 300
+    disk_status_interval: 900
+    snapshot_interval: 1800
+
+  - name: standard
+    device_info_interval: 300
+    camera_status_interval: 120
+    disk_status_interval: 600
+    snapshot_interval: 900
+
+  - name: critical
+    device_info_interval: 120
+    camera_status_interval: 60
+    disk_status_interval: 300
+    snapshot_interval: 300
+
+devices:
+  - device_id: nvr-demo-01
+    name: "Demo NVR"
+    vendor: hikvision
+    host: "192.168.1.100"
+    port: 80
+    username: admin
+    password: "changeme"
+    transport_mode: isapi
+    polling_policy_id: standard
