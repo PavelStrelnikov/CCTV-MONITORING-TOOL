@@ -12,6 +12,7 @@ class IsapiTransport(HikvisionTransport):
 
     DEVICE_INFO = "/ISAPI/System/deviceInfo"
     CHANNELS_STATUS = "/ISAPI/ContentMgmt/InputProxy/channels/status"
+    VIDEO_INPUTS = "/ISAPI/System/Video/inputs/channels"
     HDD_STATUS = "/ISAPI/ContentMgmt/Storage/hdd"
     SNAPSHOT = "/ISAPI/Streaming/channels/{channel_id}/picture"
     RECORDING_STATUS = "/ISAPI/ContentMgmt/record/tracks"
@@ -23,7 +24,7 @@ class IsapiTransport(HikvisionTransport):
         self._device_id: str = ""
 
     async def connect(self, host: str, port: int, username: str, password: str) -> None:
-        scheme = "https" if port == 443 else "http"
+        scheme = "https" if port % 1000 == 443 else "http"
         self._base_url = f"{scheme}://{host}:{port}"
         self._auth = httpx.DigestAuth(username, password)
         self._device_id = f"{host}:{port}"
@@ -53,6 +54,10 @@ class IsapiTransport(HikvisionTransport):
     async def get_channels_status(self) -> list[dict]:
         response = await self._request("GET", self.CHANNELS_STATUS)
         return [{"raw_xml": response.text}]
+
+    async def get_video_inputs(self) -> dict:
+        response = await self._request("GET", self.VIDEO_INPUTS)
+        return {"raw_xml": response.text}
 
     async def get_disk_status(self) -> list[dict]:
         response = await self._request("GET", self.HDD_STATUS)

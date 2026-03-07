@@ -64,6 +64,34 @@ class TestParseDeviceInfo:
         assert result.channels_count == 0
 
 
+class TestParseDeviceInfoStdCgi:
+    """Tests for parsing XML with std-cgi namespace (real NVR response)."""
+
+    @pytest.fixture()
+    def stdcgi_xml(self) -> str:
+        return (FIXTURES_DIR / "device_info_stdcgi.xml").read_text(encoding="utf-8")
+
+    def test_parses_model(self, stdcgi_xml: str) -> None:
+        result = HikvisionMapper.parse_device_info(stdcgi_xml, "nvr-02")
+        assert result.model == "NVR-216MH-C"
+
+    def test_parses_serial_number(self, stdcgi_xml: str) -> None:
+        result = HikvisionMapper.parse_device_info(stdcgi_xml, "nvr-02")
+        assert result.serial_number == "NVR-216MH-C1620180824CCRRC45564269WCVU"
+
+    def test_parses_firmware_version(self, stdcgi_xml: str) -> None:
+        result = HikvisionMapper.parse_device_info(stdcgi_xml, "nvr-02")
+        assert result.firmware_version == "V3.4.97"
+
+    def test_parses_mac_address(self, stdcgi_xml: str) -> None:
+        result = HikvisionMapper.parse_device_info(stdcgi_xml, "nvr-02")
+        assert result.mac_address == "58:03:fb:c8:56:2b"
+
+    def test_parses_device_type(self, stdcgi_xml: str) -> None:
+        result = HikvisionMapper.parse_device_info(stdcgi_xml, "nvr-02")
+        assert result.device_type == "IPC"
+
+
 class TestParseChannelsStatus:
     """Tests for HikvisionMapper.parse_channels_status."""
 
@@ -159,3 +187,105 @@ class TestParseDiskStatus:
     def test_returns_disk_health_status_instances(self, hdd_status_xml: str, checked_at: datetime) -> None:
         result = HikvisionMapper.parse_disk_status(hdd_status_xml, "nvr-01", checked_at)
         assert all(isinstance(d, DiskHealthStatus) for d in result)
+
+
+class TestParseDiskStatusReal:
+    """Tests for parsing real NVR HDD response (lowercase <hdd> tags)."""
+
+    @pytest.fixture()
+    def checked_at(self) -> datetime:
+        return datetime(2025, 1, 15, 12, 0, 0, tzinfo=timezone.utc)
+
+    @pytest.fixture()
+    def real_hdd_xml(self) -> str:
+        return (FIXTURES_DIR / "hdd_status_real.xml").read_text(encoding="utf-8")
+
+    def test_returns_two_disks(self, real_hdd_xml: str, checked_at: datetime) -> None:
+        result = HikvisionMapper.parse_disk_status(real_hdd_xml, "nvr-brosh-40", checked_at)
+        assert len(result) == 2
+
+    def test_first_disk_ok(self, real_hdd_xml: str, checked_at: datetime) -> None:
+        result = HikvisionMapper.parse_disk_status(real_hdd_xml, "nvr-brosh-40", checked_at)
+        assert result[0].status == DiskStatus.OK
+        assert result[0].disk_id == "1"
+
+    def test_second_disk_idle_maps_to_ok(self, real_hdd_xml: str, checked_at: datetime) -> None:
+        result = HikvisionMapper.parse_disk_status(real_hdd_xml, "nvr-brosh-40", checked_at)
+        assert result[1].status == DiskStatus.OK
+        assert result[1].health_status == "idle"
+
+    def test_capacity_in_bytes(self, real_hdd_xml: str, checked_at: datetime) -> None:
+        result = HikvisionMapper.parse_disk_status(real_hdd_xml, "nvr-brosh-40", checked_at)
+        assert result[0].capacity_bytes == 1907729 * 1024 * 1024
+
+    def test_free_space_zero(self, real_hdd_xml: str, checked_at: datetime) -> None:
+        result = HikvisionMapper.parse_disk_status(real_hdd_xml, "nvr-brosh-40", checked_at)
+        assert result[0].free_bytes == 0
+
+
+class TestParseVideoInputs:
+    """Tests for parsing DVR VideoInputChannel (analog cameras)."""
+
+    @pytest.fixture()
+    def checked_at(self) -> datetime:
+        return datetime(2025, 1, 15, 12, 0, 0, tzinfo=timezone.utc)
+
+    @pytest.fixture()
+    def dvr_xml(self) -> str:
+        return (FIXTURES_DIR / "video_inputs_dvr.xml").read_text(encoding="utf-8")
+
+    def test_returns_three_channels(self, dvr_xml: str, checked_at: datetime) -> None:
+        result = HikvisionMapper.parse_video_inputs(dvr_xml, "nvr-brosh-40", checked_at)
+        assert len(result) == 3
+
+    def test_channel_with_signal_is_online(self, dvr_xml: str, checked_at: datetime) -> None:
+        result = HikvisionMapper.parse_video_inputs(dvr_xml, "nvr-brosh-40", checked_at)
+        assert result[0].status == CameraStatus.ONLINE
+        assert result[0].channel_name == "Camera1"
+
+    def test_channel_no_video_is_offline(self, dvr_xml: str, checked_at: datetime) -> None:
+        result = HikvisionMapper.parse_video_inputs(dvr_xml, "nvr-brosh-40", checked_at)
+        assert result[1].status == CameraStatus.OFFLINE
+        assert result[1].channel_name == "Camera2"
+
+    def test_channel_id(self, dvr_xml: str, checked_at: datetime) -> None:
+        result = HikvisionMapper.parse_video_inputs(dvr_xml, "nvr-brosh-40", checked_at)
+        assert result[0].channel_id == "1"
+        assert result[1].channel_id == "2"
+        assert result[2].channel_id == "3"
+
+    def test_ip_address_is_none_for_analog(self, dvr_xml: str, checked_at: datetime) -> None:
+        result = HikvisionMapper.parse_video_inputs(dvr_xml, "nvr-brosh-40", checked_at)
+        assert all(ch.ip_address is None for ch in result)
+
+
+class TestParseChannelsStatusReal:
+    """Tests for parsing real NVR InputProxyChannelStatus (no <name> tag)."""
+
+    @pytest.fixture()
+    def checked_at(self) -> datetime:
+        return datetime(2025, 1, 15, 12, 0, 0, tzinfo=timezone.utc)
+
+    @pytest.fixture()
+    def real_channels_xml(self) -> str:
+        return (FIXTURES_DIR / "channels_status_real.xml").read_text(encoding="utf-8")
+
+    def test_returns_four_channels(self, real_channels_xml: str, checked_at: datetime) -> None:
+        result = HikvisionMapper.parse_channels_status(real_channels_xml, "nvr-mike-7", checked_at)
+        assert len(result) == 4
+
+    def test_three_online_one_offline(self, real_channels_xml: str, checked_at: datetime) -> None:
+        result = HikvisionMapper.parse_channels_status(real_channels_xml, "nvr-mike-7", checked_at)
+        online = [ch for ch in result if ch.status == CameraStatus.ONLINE]
+        offline = [ch for ch in result if ch.status == CameraStatus.OFFLINE]
+        assert len(online) == 3
+        assert len(offline) == 1
+
+    def test_ip_addresses_parsed(self, real_channels_xml: str, checked_at: datetime) -> None:
+        result = HikvisionMapper.parse_channels_status(real_channels_xml, "nvr-mike-7", checked_at)
+        assert result[0].ip_address == "192.168.254.2"
+        assert result[3].ip_address == "192.168.254.5"
+
+    def test_name_empty_when_missing(self, real_channels_xml: str, checked_at: datetime) -> None:
+        result = HikvisionMapper.parse_channels_status(real_channels_xml, "nvr-mike-7", checked_at)
+        assert result[0].channel_name == ""

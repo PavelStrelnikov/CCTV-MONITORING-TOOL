@@ -42,13 +42,26 @@ class HikvisionDriver:
         return HikvisionMapper.parse_device_info(raw["raw_xml"], self.device_id)
 
     async def get_camera_statuses(self) -> list[CameraChannelStatus]:
-        raw_list = await self._transport.get_channels_status()
         now = datetime.now(timezone.utc)
+
+        # Try NVR-style InputProxy first (IP cameras)
+        raw_list = await self._transport.get_channels_status()
         all_statuses: list[CameraChannelStatus] = []
         for raw in raw_list:
             all_statuses.extend(
                 HikvisionMapper.parse_channels_status(raw["raw_xml"], self.device_id, now)
             )
+
+        # If empty, try DVR-style VideoInputChannels (analog cameras)
+        if not all_statuses:
+            try:
+                raw = await self._transport.get_video_inputs()
+                all_statuses = HikvisionMapper.parse_video_inputs(
+                    raw["raw_xml"], self.device_id, now
+                )
+            except Exception:
+                pass
+
         return all_statuses
 
     async def get_disk_statuses(self) -> list[DiskHealthStatus]:

@@ -18,12 +18,72 @@ polling_policies:
     snapshot_interval: 300
 
 devices:
-  - device_id: nvr-demo-01
-    name: "Demo NVR"
+  - device_id: nvr-brosh-40
+    name: "Brosh 40 Tirat Carmel"
     vendor: hikvision
-    host: "192.168.1.100"
-    port: 80
+    host: "213.57.74.85"
+    port: 8443
     username: admin
-    password: "changeme"
+    password: "Brosh#40!"
+    transport_mode: isapi
+    polling_policy_id: standard
+
+  - device_id: nvr-derech-hayam-67
+    name: "Derech HaYam 67 Haifa"
+    vendor: hikvision
+    host: "213.57.74.54"
+    port: 8080
+    username: admin
+    password: "DerehHaYam#67!"
+    transport_mode: isapi
+    polling_policy_id: standard
+
+  - device_id: nvr-mike-brant-7
+    name: "Mike Brant 7 Haifa"
+    vendor: hikvision
+    host: "5.29.135.76"
+    port: 8443
+    username: admin
+    password: "MikeBrant#7!"
+    transport_mode: isapi
+    polling_policy_id: standard
+
+  - device_id: nvr-mike-brant-9
+    name: "Mike Brant 9 Haifa"
+    vendor: hikvision
+    host: "37.142.193.226"
+    port: 8080
+    username: admin
+    password: "MikeBrant#9!"
+    transport_mode: isapi
+    polling_policy_id: standard
+
+  - device_id: nvr-bat-galim-39a
+    name: "Bat Galim 39 Haifa (NVR-1)"
+    vendor: hikvision
+    host: "89.237.85.40"
+    port: 8443
+    username: admin
+    password: "BatGalim#39!"
+    transport_mode: isapi
+    polling_policy_id: standard
+
+  - device_id: nvr-bat-galim-39b
+    name: "Bat Galim 39 Haifa (NVR-2)"
+    vendor: hikvision
+    host: "89.237.85.40"
+    port: 9443
+    username: admin
+    password: "BatGalim#39!"
+    transport_mode: isapi
+    polling_policy_id: standard
+
+  - device_id: nvr-sant-lukas-7
+    name: "Sant Lukas 7 Haifa"
+    vendor: hikvision
+    host: "37.142.41.30"
+    port: 8064
+    username: admin
+    password: "SantLukas#7!"
     transport_mode: isapi
     polling_policy_id: standard

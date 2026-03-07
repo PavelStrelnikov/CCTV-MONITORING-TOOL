@@ -15,6 +15,9 @@ class HikvisionTransport(ABC):
     async def get_channels_status(self) -> list[dict]: ...
 
     @abstractmethod
+    async def get_video_inputs(self) -> dict: ...
+
+    @abstractmethod
     async def get_disk_status(self) -> list[dict]: ...
 
     @abstractmethod

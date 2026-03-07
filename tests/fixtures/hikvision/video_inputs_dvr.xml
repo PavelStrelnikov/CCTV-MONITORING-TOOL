@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<VideoInputChannelList version="1.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
+<VideoInputChannel version="1.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
+<id>1</id>
+<inputPort>1</inputPort>
+<videoInputEnabled>true</videoInputEnabled>
+<name>Camera1</name>
+<videoFormat>PAL</videoFormat>
+<resDesc>PAL</resDesc>
+</VideoInputChannel>
+<VideoInputChannel version="1.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
+<id>2</id>
+<inputPort>2</inputPort>
+<videoInputEnabled>true</videoInputEnabled>
+<name>Camera2</name>
+<videoFormat>PAL</videoFormat>
+<resDesc>NO VIDEO</resDesc>
+</VideoInputChannel>
+<VideoInputChannel version="1.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
+<id>3</id>
+<inputPort>3</inputPort>
+<videoInputEnabled>true</videoInputEnabled>
+<name>Camera3</name>
+<videoFormat>PAL</videoFormat>
+<resDesc>PAL</resDesc>
+</VideoInputChannel>
+</VideoInputChannelList>

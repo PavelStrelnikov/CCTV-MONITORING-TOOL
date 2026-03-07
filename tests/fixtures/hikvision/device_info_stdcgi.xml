@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<DeviceInfo version="1.0" xmlns="http://www.std-cgi.com/ver20/XMLSchema">
+<deviceName>Network Video Recorder</deviceName>
+<deviceID>48433435-3536-3432-3639-5803fbc8562b</deviceID>
+<model>NVR-216MH-C</model>
+<serialNumber>NVR-216MH-C1620180824CCRRC45564269WCVU</serialNumber>
+<macAddress>58:03:fb:c8:56:2b</macAddress>
+<firmwareVersion>V3.4.97</firmwareVersion>
+<firmwareReleasedDate>build 180523</firmwareReleasedDate>
+<encoderVersion>V5.0</encoderVersion>
+<encoderReleasedDate>build 170918</encoderReleasedDate>
+<deviceType>IPC</deviceType>
+<telecontrolID>255</telecontrolID>
+</DeviceInfo>

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<hddList version="1.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
+<hdd version="1.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
+<id>1</id>
+<hddName>hdda</hddName>
+<hddPath></hddPath>
+<hddType>SATA</hddType>
+<status>ok</status>
+<capacity>1907729</capacity>
+<freeSpace>0</freeSpace>
+<property>RW</property>
+</hdd>
+<hdd version="1.0" xmlns="http://www.hikvision.com/ver20/XMLSchema">
+<id>2</id>
+<hddName>hddb</hddName>
+<hddPath></hddPath>
+<hddType>SATA</hddType>
+<status>idle</status>
+<capacity>2861588</capacity>
+<freeSpace>0</freeSpace>
+<property>RW</property>
+</hdd>
+</hddList>

@@ -99,6 +99,42 @@ async def test_detect_capabilities(device_config, mock_transport):
     assert caps.model == "DS-7608NI-K2"
 
 
+@pytest.fixture
+def mock_transport_dvr():
+    """DVR transport: InputProxy returns empty, VideoInputChannels has data."""
+    transport = AsyncMock()
+    transport.get_device_info.return_value = {
+        "raw_xml": (FIXTURES / "device_info.xml").read_text()
+    }
+    # NVR-style channels returns empty list
+    empty_xml = (
+        '<?xml version="1.0" encoding="UTF-8" ?>'
+        '<InputProxyChannelStatusList version="1.0" '
+        'xmlns="http://www.hikvision.com/ver20/XMLSchema">'
+        '</InputProxyChannelStatusList>'
+    )
+    transport.get_channels_status.return_value = [{"raw_xml": empty_xml}]
+    # DVR-style video inputs has data
+    transport.get_video_inputs.return_value = {
+        "raw_xml": (FIXTURES / "video_inputs_dvr.xml").read_text()
+    }
+    transport.get_disk_status.return_value = [
+        {"raw_xml": (FIXTURES / "hdd_status.xml").read_text()}
+    ]
+    transport.get_snapshot.return_value = b"\xff\xd8\xff\xe0"
+    return transport
+
+
+@pytest.mark.asyncio
+async def test_dvr_falls_back_to_video_inputs(device_config, mock_transport_dvr):
+    driver = HikvisionDriver(mock_transport_dvr)
+    await driver.connect(device_config)
+    statuses = await driver.get_camera_statuses()
+    assert len(statuses) == 3
+    assert statuses[0].status == CameraStatus.ONLINE
+    assert statuses[1].status == CameraStatus.OFFLINE  # NO VIDEO
+
+
 @pytest.mark.asyncio
 async def test_disconnect(device_config, mock_transport):
     driver = HikvisionDriver(mock_transport)

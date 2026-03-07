@@ -59,6 +59,42 @@ async def test_connect_https_on_port_443(mock_client_manager):
 
 
 @pytest.mark.asyncio
+async def test_connect_https_on_port_8443(mock_client_manager):
+    manager, _ = mock_client_manager
+    t = IsapiTransport(manager)
+    await t.connect("213.57.74.85", 8443, "admin", "pass")
+
+    assert t._base_url == "https://213.57.74.85:8443"
+
+
+@pytest.mark.asyncio
+async def test_connect_https_on_port_9443(mock_client_manager):
+    manager, _ = mock_client_manager
+    t = IsapiTransport(manager)
+    await t.connect("89.237.85.40", 9443, "admin", "pass")
+
+    assert t._base_url == "https://89.237.85.40:9443"
+
+
+@pytest.mark.asyncio
+async def test_connect_http_on_port_8080(mock_client_manager):
+    manager, _ = mock_client_manager
+    t = IsapiTransport(manager)
+    await t.connect("213.57.74.54", 8080, "admin", "pass")
+
+    assert t._base_url == "http://213.57.74.54:8080"
+
+
+@pytest.mark.asyncio
+async def test_connect_http_on_port_8064(mock_client_manager):
+    manager, _ = mock_client_manager
+    t = IsapiTransport(manager)
+    await t.connect("37.142.41.30", 8064, "admin", "pass")
+
+    assert t._base_url == "http://37.142.41.30:8064"
+
+
+@pytest.mark.asyncio
 async def test_get_device_info_returns_raw_xml(mock_client_manager):
     manager, client = mock_client_manager
     t = IsapiTransport(manager)
