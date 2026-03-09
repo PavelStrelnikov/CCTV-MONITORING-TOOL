@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import AppBar from '@mui/material/AppBar';
 import Box from '@mui/material/Box';
@@ -38,6 +38,12 @@ export default function Layout() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const isRtl = i18n.language === 'he';
+  const [now, setNow] = useState(new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   const drawerWidth = isMdUp && collapsed ? DRAWER_COLLAPSED : DRAWER_WIDTH;
 
@@ -109,14 +115,23 @@ export default function Layout() {
         position="fixed"
         sx={{ zIndex: (th) => th.zIndex.drawer + 1 }}
       >
-        <Toolbar variant="dense" sx={{ justifyContent: 'space-between' }}>
+        <Toolbar variant="dense" sx={{ gap: 1 }}>
           {!isMdUp && (
             <IconButton color="inherit" edge="start" onClick={() => setMobileOpen(true)}>
               <MenuIcon />
             </IconButton>
           )}
+          <Typography variant="subtitle1" sx={{ fontWeight: 700, letterSpacing: '0.04em' }}>
+            {t('nav.brand')}
+          </Typography>
           <Box sx={{ flex: 1 }} />
-          <IconButton onClick={toggleTheme} color="inherit" size="small">
+          <Typography variant="body2" sx={{ opacity: 0.85, fontVariantNumeric: 'tabular-nums', display: { xs: 'none', sm: 'block' } }}>
+            {now.toLocaleDateString(i18n.language === 'he' ? 'he-IL' : 'en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
+          </Typography>
+          <Typography variant="body2" sx={{ fontWeight: 600, fontVariantNumeric: 'tabular-nums', minWidth: 56 }}>
+            {now.toLocaleTimeString(i18n.language === 'he' ? 'he-IL' : 'en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+          </Typography>
+          <IconButton onClick={toggleTheme} color="inherit" size="small" sx={{ ml: 0.5 }}>
             {mode === 'dark' ? <Brightness7Icon /> : <Brightness4Icon />}
           </IconButton>
         </Toolbar>
