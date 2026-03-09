@@ -1,6 +1,6 @@
 from collections.abc import AsyncGenerator
 
-from fastapi import Depends, Request
+from fastapi import Depends, Header, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cctv_monitor.core.config import Settings
@@ -57,3 +57,15 @@ def get_sdk_binding(request: Request):
 
 def get_device_repo(session: AsyncSession = Depends(get_session)) -> DeviceRepository:
     return DeviceRepository(session)
+
+
+def verify_internal_api_token(
+    request: Request,
+    x_internal_token: str | None = Header(default=None, alias="X-Internal-Token"),
+) -> None:
+    settings: Settings = request.app.state.settings
+    expected = settings.INTERNAL_API_TOKEN
+    if not expected:
+        raise HTTPException(status_code=503, detail="Internal API token is not configured")
+    if x_internal_token != expected:
+        raise HTTPException(status_code=401, detail="Invalid internal token")
