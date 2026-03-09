@@ -11,6 +11,10 @@ class Settings(BaseSettings):
     SNAPSHOT_BASE_DIR: str = "./data/snapshots"
     LOG_LEVEL: str = "INFO"
     HCNETSDK_LIB_PATH: str | None = None
+    TELEGRAM_BOT_TOKEN: str | None = None
+    INTERNAL_API_BASE_URL: str = "http://localhost:8001"
+    INTERNAL_API_TOKEN: str | None = None
+    TELEGRAM_DEFAULT_TIMEZONE: str = "Asia/Jerusalem"
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 

@@ -4,6 +4,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from cctv_monitor.storage.tables import (
     DeviceTable, CheckResultTable, AlertTable, SnapshotTable,
     DeviceTagTable, TagDefinitionTable, DeviceHealthLogTable, SystemSettingTable,
+    TelegramUserTable, TelegramChatTable, TelegramSubscriptionTable,
+    TelegramAuditLogTable, TelegramDeliveryLogTable,
 )
 
 
@@ -273,3 +275,206 @@ class SystemSettingsRepository:
         merged = dict(self.DEFAULTS)
         merged.update(stored)
         return merged
+
+
+class TelegramUserRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def get_by_telegram_user_id(self, telegram_user_id: int) -> TelegramUserTable | None:
+        result = await self._session.execute(
+            select(TelegramUserTable).where(TelegramUserTable.telegram_user_id == telegram_user_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def upsert_user(
+        self,
+        *,
+        telegram_user_id: int,
+        username: str | None,
+        display_name: str | None,
+        role: str = "viewer",
+        is_active: bool = True,
+    ) -> TelegramUserTable:
+        user = await self.get_by_telegram_user_id(telegram_user_id)
+        if user is None:
+            user = TelegramUserTable(
+                telegram_user_id=telegram_user_id,
+                username=username,
+                display_name=display_name,
+                role=role,
+                is_active=is_active,
+            )
+            self._session.add(user)
+        else:
+            user.username = username
+            user.display_name = display_name
+            user.role = role
+            user.is_active = is_active
+            user.updated_at = datetime.now(timezone.utc)
+        await self._session.flush()
+        return user
+
+    async def list_active_users(self) -> list[TelegramUserTable]:
+        result = await self._session.execute(
+            select(TelegramUserTable).where(TelegramUserTable.is_active.is_(True))
+        )
+        return list(result.scalars().all())
+
+
+class TelegramChatRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def upsert_chat(
+        self,
+        *,
+        telegram_chat_id: int,
+        chat_type: str,
+        title: str | None,
+        is_active: bool = True,
+    ) -> TelegramChatTable:
+        result = await self._session.execute(
+            select(TelegramChatTable).where(TelegramChatTable.telegram_chat_id == telegram_chat_id)
+        )
+        chat = result.scalar_one_or_none()
+        if chat is None:
+            chat = TelegramChatTable(
+                telegram_chat_id=telegram_chat_id,
+                chat_type=chat_type,
+                title=title,
+                is_active=is_active,
+            )
+            self._session.add(chat)
+        else:
+            chat.chat_type = chat_type
+            chat.title = title
+            chat.is_active = is_active
+            chat.updated_at = datetime.now(timezone.utc)
+        await self._session.flush()
+        return chat
+
+
+class TelegramSubscriptionRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def get_subscription(
+        self,
+        *,
+        telegram_user_id: int,
+        subscription_type: str,
+    ) -> TelegramSubscriptionTable | None:
+        result = await self._session.execute(
+            select(TelegramSubscriptionTable).where(
+                TelegramSubscriptionTable.telegram_user_id == telegram_user_id,
+                TelegramSubscriptionTable.subscription_type == subscription_type,
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def set_subscription(
+        self,
+        *,
+        telegram_user_id: int,
+        subscription_type: str,
+        enabled: bool,
+        timezone_name: str = "Asia/Jerusalem",
+        schedule_cron: str | None = None,
+    ) -> TelegramSubscriptionTable:
+        row = await self.get_subscription(
+            telegram_user_id=telegram_user_id,
+            subscription_type=subscription_type,
+        )
+        if row is None:
+            row = TelegramSubscriptionTable(
+                telegram_user_id=telegram_user_id,
+                subscription_type=subscription_type,
+                is_enabled=enabled,
+                timezone=timezone_name,
+                schedule_cron=schedule_cron,
+            )
+            self._session.add(row)
+        else:
+            row.is_enabled = enabled
+            row.timezone = timezone_name
+            row.schedule_cron = schedule_cron
+            row.updated_at = datetime.now(timezone.utc)
+        await self._session.flush()
+        return row
+
+    async def list_enabled_users(self, subscription_type: str) -> list[int]:
+        result = await self._session.execute(
+            select(TelegramSubscriptionTable.telegram_user_id).where(
+                TelegramSubscriptionTable.subscription_type == subscription_type,
+                TelegramSubscriptionTable.is_enabled.is_(True),
+            )
+        )
+        return list(result.scalars().all())
+
+
+class TelegramAuditRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def log_command(
+        self,
+        *,
+        telegram_user_id: int,
+        telegram_chat_id: int | None,
+        command: str,
+        status: str,
+        args_json: dict | None = None,
+        error_message: str | None = None,
+    ) -> TelegramAuditLogTable:
+        row = TelegramAuditLogTable(
+            telegram_user_id=telegram_user_id,
+            telegram_chat_id=telegram_chat_id,
+            command=command,
+            args_json=args_json,
+            status=status,
+            error_message=error_message,
+            created_at=datetime.now(timezone.utc),
+        )
+        self._session.add(row)
+        await self._session.flush()
+        return row
+
+
+class TelegramDeliveryRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def record_delivery(
+        self,
+        *,
+        telegram_user_id: int,
+        message_type: str,
+        dedup_key: str,
+        status: str,
+        alert_id: int | None = None,
+        error_message: str | None = None,
+    ) -> TelegramDeliveryLogTable:
+        row = TelegramDeliveryLogTable(
+            alert_id=alert_id,
+            telegram_user_id=telegram_user_id,
+            message_type=message_type,
+            dedup_key=dedup_key,
+            status=status,
+            error_message=error_message,
+            created_at=datetime.now(timezone.utc),
+        )
+        self._session.add(row)
+        await self._session.flush()
+        return row
+
+    async def was_sent_recently(self, *, dedup_key: str, cooldown_minutes: int) -> bool:
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=cooldown_minutes)
+        result = await self._session.execute(
+            select(TelegramDeliveryLogTable.id).where(
+                TelegramDeliveryLogTable.dedup_key == dedup_key,
+                TelegramDeliveryLogTable.status == "sent",
+                TelegramDeliveryLogTable.created_at >= cutoff,
+            )
+        )
+        return result.scalar_one_or_none() is not None
