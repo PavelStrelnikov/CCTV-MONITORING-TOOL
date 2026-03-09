@@ -161,7 +161,7 @@ def build_router(api_client: TelegramApiClient) -> Router:
             return
         try:
             payload = await api_client.get_overview()
-            await message.answer(format_overview(payload))
+            await message.answer(format_overview(payload), parse_mode="HTML")
         except httpx.HTTPError:
             await message.answer("Failed to fetch overview. Try again later.")
 
@@ -172,7 +172,7 @@ def build_router(api_client: TelegramApiClient) -> Router:
             return
         try:
             payload = await api_client.get_alerts(status="active", limit=10)
-            await message.answer(format_alerts(payload))
+            await message.answer(format_alerts(payload), parse_mode="HTML")
         except httpx.HTTPError:
             await message.answer("Failed to fetch alerts. Try again later.")
 
@@ -188,7 +188,7 @@ def build_router(api_client: TelegramApiClient) -> Router:
         device_id = parts[1].strip()
         try:
             payload = await api_client.get_device(device_id)
-            await message.answer(format_device_detail(payload))
+            await message.answer(format_device_detail(payload), parse_mode="HTML")
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code == 404:
                 await message.answer(f"Device '{device_id}' not found.")
@@ -208,7 +208,7 @@ def build_router(api_client: TelegramApiClient) -> Router:
             payload = await api_client.list_devices(search=search, limit=30)
             if message.chat:
                 device_cache_by_chat[message.chat.id] = payload
-            await message.answer(format_devices(payload))
+            await message.answer(format_devices(payload), parse_mode="HTML")
             if payload:
                 await message.answer(
                     "Select a device:",
@@ -232,7 +232,7 @@ def build_router(api_client: TelegramApiClient) -> Router:
         device_id = parts[1].strip()
         try:
             payload = await api_client.poll_device(device_id)
-            await message.answer(format_poll_result(payload))
+            await message.answer(format_poll_result(payload), parse_mode="HTML")
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code == 404:
                 await message.answer(f"Device '{device_id}' not found.")
@@ -293,7 +293,7 @@ def build_router(api_client: TelegramApiClient) -> Router:
 
         try:
             payload = await api_client.get_device(device_id)
-            await callback.message.answer(format_device_detail(payload))
+            await callback.message.answer(format_device_detail(payload), parse_mode="HTML")
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code == 404:
                 await callback.message.answer(f"Device '{device_id}' not found.")
@@ -336,7 +336,7 @@ def build_router(api_client: TelegramApiClient) -> Router:
 
         try:
             payload = await api_client.poll_device(device_id)
-            await callback.message.answer(format_poll_result(payload))
+            await callback.message.answer(format_poll_result(payload), parse_mode="HTML")
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code == 404:
                 await callback.message.answer(f"Device '{device_id}' not found.")
@@ -370,7 +370,7 @@ def build_router(api_client: TelegramApiClient) -> Router:
         device_id = items[idx].get("device_id", "")
         try:
             payload = await api_client.get_device(device_id)
-            await callback.message.answer(format_network_info(payload))
+            await callback.message.answer(format_network_info(payload), parse_mode="HTML")
         except httpx.HTTPError:
             await callback.message.answer("Failed to fetch network details.")
         await callback.answer()
@@ -404,7 +404,7 @@ def build_router(api_client: TelegramApiClient) -> Router:
         device_id = items[idx].get("device_id", "")
         try:
             payload = await api_client.get_credentials(device_id)
-            await callback.message.answer(format_credentials(payload))
+            await callback.message.answer(format_credentials(payload), parse_mode="HTML")
         except httpx.HTTPError:
             await callback.message.answer("Failed to fetch credentials.")
         await callback.answer()
@@ -433,7 +433,7 @@ def build_router(api_client: TelegramApiClient) -> Router:
         device_id = items[idx].get("device_id", "")
         try:
             payload = await api_client.get_device(device_id)
-            await callback.message.answer(format_disks(payload))
+            await callback.message.answer(format_disks(payload), parse_mode="HTML")
         except httpx.HTTPError:
             await callback.message.answer("Failed to fetch disk status.")
         await callback.answer()
@@ -464,7 +464,7 @@ def build_router(api_client: TelegramApiClient) -> Router:
             payload = await api_client.get_device(device_id)
             channels = payload.get("cameras", []) or []
             channels_cache_by_chat.setdefault(chat_id, {})[idx] = channels
-            await callback.message.answer(format_channels(payload))
+            await callback.message.answer(format_channels(payload), parse_mode="HTML")
             if channels:
                 await callback.message.answer(
                     "Select channel for snapshot:",
