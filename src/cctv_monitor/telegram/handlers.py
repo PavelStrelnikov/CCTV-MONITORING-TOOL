@@ -34,6 +34,7 @@ def build_router(api_client: TelegramApiClient) -> Router:
     router = Router(name="telegram_commands")
     device_cache_by_chat: dict[int, list[dict]] = {}
     channels_cache_by_chat: dict[int, dict[int, list[dict]]] = {}
+    CHANNELS_PAGE_SIZE = 8
 
     def _main_menu() -> ReplyKeyboardMarkup:
         return ReplyKeyboardMarkup(
@@ -71,15 +72,46 @@ def build_router(api_client: TelegramApiClient) -> Router:
             ]
         )
 
-    def _channels_keyboard(idx: int, channels: list[dict]) -> InlineKeyboardMarkup:
+    def _channels_keyboard(idx: int, channels: list[dict], page: int) -> InlineKeyboardMarkup:
+        total = len(channels)
+        total_pages = max(1, (total + CHANNELS_PAGE_SIZE - 1) // CHANNELS_PAGE_SIZE)
+        page = max(0, min(page, total_pages - 1))
+        start = page * CHANNELS_PAGE_SIZE
+        end = min(start + CHANNELS_PAGE_SIZE, total)
+
         rows: list[list[InlineKeyboardButton]] = []
-        for i, ch in enumerate(channels[:20], start=1):
+        for i, ch in enumerate(channels[start:end], start=start + 1):
             ch_id = str(ch.get("channel_id", i))
             ch_name = ch.get("channel_name", f"CH {ch_id}")
             rows.append(
                 [InlineKeyboardButton(text=f"{i}. {ch_name}", callback_data=f"chsnap:{idx}:{ch_id}")]
             )
+        nav: list[InlineKeyboardButton] = []
+        if page > 0:
+            nav.append(InlineKeyboardButton(text="Prev", callback_data=f"chpage:{idx}:{page - 1}"))
+        if page < total_pages - 1:
+            nav.append(InlineKeyboardButton(text="Next", callback_data=f"chpage:{idx}:{page + 1}"))
+        if nav:
+            rows.append(nav)
         return InlineKeyboardMarkup(inline_keyboard=rows)
+
+    async def _show_channels_page(callback: CallbackQuery, idx: int, page: int) -> None:
+        if callback.message is None:
+            return
+        chat_id = callback.message.chat.id
+        channel_map = channels_cache_by_chat.get(chat_id, {})
+        channels = channel_map.get(idx, [])
+        if not channels:
+            await callback.message.answer("Channel list expired. Open Channels again.")
+            return
+        await callback.message.answer(
+            format_channels(channels, page=page, page_size=CHANNELS_PAGE_SIZE),
+            parse_mode="HTML",
+        )
+        await callback.message.answer(
+            "Select channel for snapshot:",
+            reply_markup=_channels_keyboard(idx, channels, page),
+        )
 
     async def _log_callback(callback: CallbackQuery, command: str, status: str) -> None:
         if callback.from_user is None:
@@ -463,15 +495,40 @@ def build_router(api_client: TelegramApiClient) -> Router:
         try:
             payload = await api_client.get_device(device_id)
             channels = payload.get("cameras", []) or []
+            ignored = set((payload.get("device", {}) or {}).get("ignored_channels", []) or [])
+            channels = [
+                c for c in channels
+                if str(c.get("channel_id", "")) not in ignored
+            ]
             channels_cache_by_chat.setdefault(chat_id, {})[idx] = channels
-            await callback.message.answer(format_channels(payload), parse_mode="HTML")
             if channels:
-                await callback.message.answer(
-                    "Select channel for snapshot:",
-                    reply_markup=_channels_keyboard(idx, channels),
-                )
+                await _show_channels_page(callback, idx, page=0)
+            else:
+                await callback.message.answer("No channels available (all are ignored or unavailable).")
         except httpx.HTTPError:
             await callback.message.answer("Failed to fetch channels.")
+        await callback.answer()
+
+    @router.callback_query(F.data.startswith("chpage:"))
+    async def handle_channels_page_callback(callback: CallbackQuery) -> None:
+        if callback.message is None or callback.from_user is None:
+            return
+        try:
+            _, idx_raw, page_raw = (callback.data or "").split(":", 2)
+            idx = int(idx_raw)
+            page = int(page_raw)
+        except (ValueError, IndexError):
+            await callback.answer("Invalid action", show_alert=True)
+            return
+
+        allowed, _ = await get_access(api_client, callback.from_user.id)
+        if not allowed:
+            await _log_callback(callback, "chpage", "denied")
+            await callback.answer("Access denied", show_alert=True)
+            return
+        await _log_callback(callback, "chpage", "ok")
+
+        await _show_channels_page(callback, idx, page)
         await callback.answer()
 
     @router.callback_query(F.data.startswith("chsnap:"))
@@ -497,6 +554,12 @@ def build_router(api_client: TelegramApiClient) -> Router:
         await _log_callback(callback, "chsnap", "ok")
 
         device_id = items[idx].get("device_id", "")
+        channels = channels_cache_by_chat.get(chat_id, {}).get(idx, [])
+        if channels:
+            available = {str(c.get("channel_id", "")) for c in channels}
+            if str(channel_id) not in available:
+                await callback.answer("Channel is ignored or unavailable.", show_alert=True)
+                return
         try:
             image = await api_client.get_snapshot(device_id, channel_id)
             photo = BufferedInputFile(image, filename=f"{device_id}_{channel_id}.jpg")

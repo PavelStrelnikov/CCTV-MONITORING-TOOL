@@ -120,12 +120,18 @@ def format_disks(payload: dict) -> str:
     return "\n".join(lines)
 
 
-def format_channels(payload: dict) -> str:
-    cameras = payload.get("cameras", []) or []
+def format_channels(channels: list[dict], *, page: int, page_size: int) -> str:
+    cameras = channels or []
     if not cameras:
         return "<b>CHANNELS</b>\nNo channels found."
-    lines = ["<b>CHANNELS</b>"]
-    for i, c in enumerate(cameras, start=1):
+    total = len(cameras)
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    page = max(0, min(page, total_pages - 1))
+    start = page * page_size
+    end = min(start + page_size, total)
+
+    lines = [f"<b>CHANNELS</b>  (page {page + 1}/{total_pages})"]
+    for i, c in enumerate(cameras[start:end], start=start + 1):
         ch_id = escape(str(c.get("channel_id", str(i))))
         name = escape(str(c.get("channel_name", f"Channel {ch_id}")))
         status = escape(str(c.get("status", "unknown")))
