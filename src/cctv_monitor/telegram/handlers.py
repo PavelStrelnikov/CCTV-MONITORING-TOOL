@@ -11,6 +11,7 @@ from cctv_monitor.telegram.api_client import TelegramApiClient
 from cctv_monitor.telegram.auth import get_access
 from cctv_monitor.telegram.formatters import (
     format_alerts,
+    format_devices,
     format_device_detail,
     format_overview,
     format_poll_result,
@@ -54,6 +55,7 @@ def build_router(api_client: TelegramApiClient) -> Router:
         await message.answer(
             "Commands:\n"
             "/overview - system status summary\n"
+            "/devices [search] - list devices and ids\n"
             "/alerts - active alerts\n"
             "/device <id> - device summary\n"
             "/poll <id> - run manual poll (operator/admin)\n"
@@ -102,6 +104,19 @@ def build_router(api_client: TelegramApiClient) -> Router:
             await message.answer("Failed to fetch device details.")
         except httpx.HTTPError:
             await message.answer("Failed to fetch device details.")
+
+    @router.message(Command("devices"))
+    async def handle_devices(message: Message) -> None:
+        allowed, _ = await _authorize_and_audit(message, "/devices")
+        if not allowed:
+            return
+        parts = (message.text or "").split(maxsplit=1)
+        search = parts[1].strip() if len(parts) > 1 else None
+        try:
+            payload = await api_client.list_devices(search=search, limit=30)
+            await message.answer(format_devices(payload), parse_mode="Markdown")
+        except httpx.HTTPError:
+            await message.answer("Failed to fetch devices list.")
 
     @router.message(Command("poll"))
     async def handle_poll(message: Message) -> None:

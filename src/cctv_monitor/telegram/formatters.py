@@ -56,3 +56,14 @@ def format_poll_result(payload: dict) -> str:
         f"Response: {response_time} ms\n"
         f"Cameras: {online_cameras} online, {offline_cameras} offline"
     )
+
+
+def format_devices(devices: list[dict]) -> str:
+    if not devices:
+        return "No devices found."
+    lines = ["Devices (name -> id):"]
+    for d in devices:
+        name = d.get("name", "Unknown")
+        device_id = d.get("device_id", "unknown")
+        lines.append(f"- {name} -> `{device_id}`")
+    return "\n".join(lines)
