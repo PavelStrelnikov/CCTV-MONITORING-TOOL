@@ -6,6 +6,7 @@ import httpx
 from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.types import (
+    BufferedInputFile,
     CallbackQuery,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -20,6 +21,10 @@ from cctv_monitor.telegram.formatters import (
     format_alerts,
     format_devices,
     format_device_detail,
+    format_disks,
+    format_channels,
+    format_credentials,
+    format_network_info,
     format_overview,
     format_poll_result,
 )
@@ -28,6 +33,7 @@ from cctv_monitor.telegram.formatters import (
 def build_router(api_client: TelegramApiClient) -> Router:
     router = Router(name="telegram_commands")
     device_cache_by_chat: dict[int, list[dict]] = {}
+    channels_cache_by_chat: dict[int, dict[int, list[dict]]] = {}
 
     def _main_menu() -> ReplyKeyboardMarkup:
         return ReplyKeyboardMarkup(
@@ -53,9 +59,40 @@ def build_router(api_client: TelegramApiClient) -> Router:
                 [
                     InlineKeyboardButton(text="Status", callback_data=f"devstatus:{idx}"),
                     InlineKeyboardButton(text="Poll", callback_data=f"devpoll:{idx}"),
+                ],
+                [
+                    InlineKeyboardButton(text="Network", callback_data=f"devnet:{idx}"),
+                    InlineKeyboardButton(text="Credentials", callback_data=f"devcred:{idx}"),
+                ],
+                [
+                    InlineKeyboardButton(text="Disks", callback_data=f"devdisks:{idx}"),
+                    InlineKeyboardButton(text="Channels", callback_data=f"devchannels:{idx}"),
                 ]
             ]
         )
+
+    def _channels_keyboard(idx: int, channels: list[dict]) -> InlineKeyboardMarkup:
+        rows: list[list[InlineKeyboardButton]] = []
+        for i, ch in enumerate(channels[:20], start=1):
+            ch_id = str(ch.get("channel_id", i))
+            ch_name = ch.get("channel_name", f"CH {ch_id}")
+            rows.append(
+                [InlineKeyboardButton(text=f"{i}. {ch_name}", callback_data=f"chsnap:{idx}:{ch_id}")]
+            )
+        return InlineKeyboardMarkup(inline_keyboard=rows)
+
+    async def _log_callback(callback: CallbackQuery, command: str, status: str) -> None:
+        if callback.from_user is None:
+            return
+        try:
+            await api_client.write_audit(
+                telegram_user_id=callback.from_user.id,
+                telegram_chat_id=callback.message.chat.id if callback.message else None,
+                command=command,
+                status=status,
+            )
+        except httpx.HTTPError:
+            pass
 
     async def _authorize_and_audit(message: Message, command: str) -> tuple[bool, str | None]:
         user = message.from_user
@@ -244,8 +281,10 @@ def build_router(api_client: TelegramApiClient) -> Router:
 
         allowed, _ = await get_access(api_client, callback.from_user.id)
         if not allowed:
+            await _log_callback(callback, "devstatus", "denied")
             await callback.answer("Access denied", show_alert=True)
             return
+        await _log_callback(callback, "devstatus", "ok")
 
         device_id = items[idx].get("device_id", "")
         if not device_id:
@@ -281,11 +320,14 @@ def build_router(api_client: TelegramApiClient) -> Router:
 
         allowed, role = await get_access(api_client, callback.from_user.id)
         if not allowed:
+            await _log_callback(callback, "devpoll", "denied")
             await callback.answer("Access denied", show_alert=True)
             return
         if role not in ("operator", "admin"):
+            await _log_callback(callback, "devpoll", "denied")
             await callback.answer("Insufficient role for poll", show_alert=True)
             return
+        await _log_callback(callback, "devpoll", "ok")
 
         device_id = items[idx].get("device_id", "")
         if not device_id:
@@ -302,6 +344,170 @@ def build_router(api_client: TelegramApiClient) -> Router:
                 await callback.message.answer("Poll failed.")
         except httpx.HTTPError:
             await callback.message.answer("Poll failed.")
+        await callback.answer()
+
+    @router.callback_query(F.data.startswith("devnet:"))
+    async def handle_device_network_callback(callback: CallbackQuery) -> None:
+        if callback.message is None or callback.from_user is None:
+            return
+        chat_id = callback.message.chat.id
+        items = device_cache_by_chat.get(chat_id, [])
+        try:
+            idx = int((callback.data or "").split(":", 1)[1])
+        except (ValueError, IndexError):
+            await callback.answer("Invalid action", show_alert=True)
+            return
+        if idx < 0 or idx >= len(items):
+            await callback.answer("Device list expired. Run /devices again.", show_alert=True)
+            return
+        allowed, _ = await get_access(api_client, callback.from_user.id)
+        if not allowed:
+            await _log_callback(callback, "devnet", "denied")
+            await callback.answer("Access denied", show_alert=True)
+            return
+        await _log_callback(callback, "devnet", "ok")
+
+        device_id = items[idx].get("device_id", "")
+        try:
+            payload = await api_client.get_device(device_id)
+            await callback.message.answer(format_network_info(payload))
+        except httpx.HTTPError:
+            await callback.message.answer("Failed to fetch network details.")
+        await callback.answer()
+
+    @router.callback_query(F.data.startswith("devcred:"))
+    async def handle_device_credentials_callback(callback: CallbackQuery) -> None:
+        if callback.message is None or callback.from_user is None:
+            return
+        chat_id = callback.message.chat.id
+        items = device_cache_by_chat.get(chat_id, [])
+        try:
+            idx = int((callback.data or "").split(":", 1)[1])
+        except (ValueError, IndexError):
+            await callback.answer("Invalid action", show_alert=True)
+            return
+        if idx < 0 or idx >= len(items):
+            await callback.answer("Device list expired. Run /devices again.", show_alert=True)
+            return
+
+        allowed, role = await get_access(api_client, callback.from_user.id)
+        if not allowed:
+            await _log_callback(callback, "devcred", "denied")
+            await callback.answer("Access denied", show_alert=True)
+            return
+        if role != "admin":
+            await _log_callback(callback, "devcred", "denied")
+            await callback.answer("Credentials are available for admin only", show_alert=True)
+            return
+        await _log_callback(callback, "devcred", "ok")
+
+        device_id = items[idx].get("device_id", "")
+        try:
+            payload = await api_client.get_credentials(device_id)
+            await callback.message.answer(format_credentials(payload))
+        except httpx.HTTPError:
+            await callback.message.answer("Failed to fetch credentials.")
+        await callback.answer()
+
+    @router.callback_query(F.data.startswith("devdisks:"))
+    async def handle_device_disks_callback(callback: CallbackQuery) -> None:
+        if callback.message is None or callback.from_user is None:
+            return
+        chat_id = callback.message.chat.id
+        items = device_cache_by_chat.get(chat_id, [])
+        try:
+            idx = int((callback.data or "").split(":", 1)[1])
+        except (ValueError, IndexError):
+            await callback.answer("Invalid action", show_alert=True)
+            return
+        if idx < 0 or idx >= len(items):
+            await callback.answer("Device list expired. Run /devices again.", show_alert=True)
+            return
+        allowed, _ = await get_access(api_client, callback.from_user.id)
+        if not allowed:
+            await _log_callback(callback, "devdisks", "denied")
+            await callback.answer("Access denied", show_alert=True)
+            return
+        await _log_callback(callback, "devdisks", "ok")
+
+        device_id = items[idx].get("device_id", "")
+        try:
+            payload = await api_client.get_device(device_id)
+            await callback.message.answer(format_disks(payload))
+        except httpx.HTTPError:
+            await callback.message.answer("Failed to fetch disk status.")
+        await callback.answer()
+
+    @router.callback_query(F.data.startswith("devchannels:"))
+    async def handle_device_channels_callback(callback: CallbackQuery) -> None:
+        if callback.message is None or callback.from_user is None:
+            return
+        chat_id = callback.message.chat.id
+        items = device_cache_by_chat.get(chat_id, [])
+        try:
+            idx = int((callback.data or "").split(":", 1)[1])
+        except (ValueError, IndexError):
+            await callback.answer("Invalid action", show_alert=True)
+            return
+        if idx < 0 or idx >= len(items):
+            await callback.answer("Device list expired. Run /devices again.", show_alert=True)
+            return
+        allowed, _ = await get_access(api_client, callback.from_user.id)
+        if not allowed:
+            await _log_callback(callback, "devchannels", "denied")
+            await callback.answer("Access denied", show_alert=True)
+            return
+        await _log_callback(callback, "devchannels", "ok")
+
+        device_id = items[idx].get("device_id", "")
+        try:
+            payload = await api_client.get_device(device_id)
+            channels = payload.get("cameras", []) or []
+            channels_cache_by_chat.setdefault(chat_id, {})[idx] = channels
+            await callback.message.answer(format_channels(payload))
+            if channels:
+                await callback.message.answer(
+                    "Select channel for snapshot:",
+                    reply_markup=_channels_keyboard(idx, channels),
+                )
+        except httpx.HTTPError:
+            await callback.message.answer("Failed to fetch channels.")
+        await callback.answer()
+
+    @router.callback_query(F.data.startswith("chsnap:"))
+    async def handle_channel_snapshot_callback(callback: CallbackQuery) -> None:
+        if callback.message is None or callback.from_user is None:
+            return
+        chat_id = callback.message.chat.id
+        items = device_cache_by_chat.get(chat_id, [])
+        try:
+            _, idx_raw, channel_id = (callback.data or "").split(":", 2)
+            idx = int(idx_raw)
+        except (ValueError, IndexError):
+            await callback.answer("Invalid action", show_alert=True)
+            return
+        if idx < 0 or idx >= len(items):
+            await callback.answer("Device list expired. Run /devices again.", show_alert=True)
+            return
+        allowed, _ = await get_access(api_client, callback.from_user.id)
+        if not allowed:
+            await _log_callback(callback, "chsnap", "denied")
+            await callback.answer("Access denied", show_alert=True)
+            return
+        await _log_callback(callback, "chsnap", "ok")
+
+        device_id = items[idx].get("device_id", "")
+        try:
+            image = await api_client.get_snapshot(device_id, channel_id)
+            photo = BufferedInputFile(image, filename=f"{device_id}_{channel_id}.jpg")
+            await callback.message.answer_photo(photo=photo, caption=f"Snapshot: {device_id} / channel {channel_id}")
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 404:
+                await callback.message.answer("Snapshot source not found.")
+            else:
+                await callback.message.answer("Failed to get snapshot.")
+        except httpx.HTTPError:
+            await callback.message.answer("Failed to get snapshot.")
         await callback.answer()
 
     return router

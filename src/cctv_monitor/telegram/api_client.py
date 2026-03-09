@@ -74,6 +74,24 @@ class TelegramApiClient:
             response.raise_for_status()
             return response.json()
 
+    async def get_credentials(self, device_id: str) -> dict:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.get(
+                f"{self._base_url}/api/devices/{device_id}/credentials",
+                headers=self._headers(),
+            )
+            response.raise_for_status()
+            return response.json()
+
+    async def get_snapshot(self, device_id: str, channel_id: str) -> bytes:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(
+                f"{self._base_url}/api/devices/{device_id}/snapshot/{channel_id}",
+                headers=self._headers(),
+            )
+            response.raise_for_status()
+            return response.content
+
     async def check_access(self, telegram_user_id: int) -> dict:
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.get(
