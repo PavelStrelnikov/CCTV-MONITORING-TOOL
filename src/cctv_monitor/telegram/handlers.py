@@ -9,7 +9,12 @@ from aiogram.types import Message
 
 from cctv_monitor.telegram.api_client import TelegramApiClient
 from cctv_monitor.telegram.auth import get_access
-from cctv_monitor.telegram.formatters import format_overview
+from cctv_monitor.telegram.formatters import (
+    format_alerts,
+    format_device_detail,
+    format_overview,
+    format_poll_result,
+)
 
 
 def build_router(api_client: TelegramApiClient) -> Router:
@@ -49,6 +54,9 @@ def build_router(api_client: TelegramApiClient) -> Router:
         await message.answer(
             "Commands:\n"
             "/overview - system status summary\n"
+            "/alerts - active alerts\n"
+            "/device <id> - device summary\n"
+            "/poll <id> - run manual poll (operator/admin)\n"
             "/help - show this help"
         )
 
@@ -62,5 +70,61 @@ def build_router(api_client: TelegramApiClient) -> Router:
             await message.answer(format_overview(payload))
         except httpx.HTTPError:
             await message.answer("Failed to fetch overview. Try again later.")
+
+    @router.message(Command("alerts"))
+    async def handle_alerts(message: Message) -> None:
+        allowed, _ = await _authorize_and_audit(message, "/alerts")
+        if not allowed:
+            return
+        try:
+            payload = await api_client.get_alerts(status="active", limit=10)
+            await message.answer(format_alerts(payload))
+        except httpx.HTTPError:
+            await message.answer("Failed to fetch alerts. Try again later.")
+
+    @router.message(Command("device"))
+    async def handle_device(message: Message) -> None:
+        allowed, _ = await _authorize_and_audit(message, "/device")
+        if not allowed:
+            return
+        parts = (message.text or "").split(maxsplit=1)
+        if len(parts) < 2 or not parts[1].strip():
+            await message.answer("Usage: /device <device_id>")
+            return
+        device_id = parts[1].strip()
+        try:
+            payload = await api_client.get_device(device_id)
+            await message.answer(format_device_detail(payload))
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 404:
+                await message.answer(f"Device '{device_id}' not found.")
+                return
+            await message.answer("Failed to fetch device details.")
+        except httpx.HTTPError:
+            await message.answer("Failed to fetch device details.")
+
+    @router.message(Command("poll"))
+    async def handle_poll(message: Message) -> None:
+        allowed, role = await _authorize_and_audit(message, "/poll")
+        if not allowed:
+            return
+        if role not in ("operator", "admin"):
+            await message.answer("Insufficient role for /poll command.")
+            return
+        parts = (message.text or "").split(maxsplit=1)
+        if len(parts) < 2 or not parts[1].strip():
+            await message.answer("Usage: /poll <device_id>")
+            return
+        device_id = parts[1].strip()
+        try:
+            payload = await api_client.poll_device(device_id)
+            await message.answer(format_poll_result(payload))
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 404:
+                await message.answer(f"Device '{device_id}' not found.")
+                return
+            await message.answer("Poll failed.")
+        except httpx.HTTPError:
+            await message.answer("Poll failed.")
 
     return router

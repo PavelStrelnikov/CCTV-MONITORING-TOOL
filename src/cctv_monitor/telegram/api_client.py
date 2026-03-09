@@ -24,6 +24,40 @@ class TelegramApiClient:
             response.raise_for_status()
             return response.json()
 
+    async def get_alerts(self, *, status: str | None = None, limit: int = 10) -> list[dict]:
+        params: dict[str, str | int] = {"limit": limit}
+        if status:
+            params["status"] = status
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.get(
+                f"{self._base_url}/api/alerts",
+                headers=self._headers(),
+                params=params,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            if isinstance(payload, list):
+                return payload[:limit]
+            return []
+
+    async def get_device(self, device_id: str) -> dict:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.get(
+                f"{self._base_url}/api/devices/{device_id}",
+                headers=self._headers(),
+            )
+            response.raise_for_status()
+            return response.json()
+
+    async def poll_device(self, device_id: str) -> dict:
+        async with httpx.AsyncClient(timeout=40.0) as client:
+            response = await client.post(
+                f"{self._base_url}/api/devices/{device_id}/poll",
+                headers=self._headers(),
+            )
+            response.raise_for_status()
+            return response.json()
+
     async def check_access(self, telegram_user_id: int) -> dict:
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.get(
