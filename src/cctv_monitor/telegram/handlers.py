@@ -3,9 +3,16 @@
 from __future__ import annotations
 
 import httpx
-from aiogram import Router
+from aiogram import F, Router
 from aiogram.filters import Command
-from aiogram.types import Message
+from aiogram.types import (
+    CallbackQuery,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    KeyboardButton,
+    Message,
+    ReplyKeyboardMarkup,
+)
 
 from cctv_monitor.telegram.api_client import TelegramApiClient
 from cctv_monitor.telegram.auth import get_access
@@ -20,6 +27,35 @@ from cctv_monitor.telegram.formatters import (
 
 def build_router(api_client: TelegramApiClient) -> Router:
     router = Router(name="telegram_commands")
+    device_cache_by_chat: dict[int, list[dict]] = {}
+
+    def _main_menu() -> ReplyKeyboardMarkup:
+        return ReplyKeyboardMarkup(
+            keyboard=[
+                [KeyboardButton(text="Overview"), KeyboardButton(text="Alerts")],
+                [KeyboardButton(text="Devices"), KeyboardButton(text="Help")],
+            ],
+            resize_keyboard=True,
+        )
+
+    def _devices_keyboard(devices: list[dict]) -> InlineKeyboardMarkup:
+        rows: list[list[InlineKeyboardButton]] = []
+        for i, d in enumerate(devices[:20], start=1):
+            name = d.get("name", "Unknown")
+            rows.append(
+                [InlineKeyboardButton(text=f"{i}. {name}", callback_data=f"devsel:{i - 1}")]
+            )
+        return InlineKeyboardMarkup(inline_keyboard=rows)
+
+    def _device_actions_keyboard(idx: int) -> InlineKeyboardMarkup:
+        return InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(text="Status", callback_data=f"devstatus:{idx}"),
+                    InlineKeyboardButton(text="Poll", callback_data=f"devpoll:{idx}"),
+                ]
+            ]
+        )
 
     async def _authorize_and_audit(message: Message, command: str) -> tuple[bool, str | None]:
         user = message.from_user
@@ -45,7 +81,10 @@ def build_router(api_client: TelegramApiClient) -> Router:
         allowed, _ = await _authorize_and_audit(message, "/start")
         if not allowed:
             return
-        await message.answer("CCTV bot connected. Use /help for available commands.")
+        await message.answer(
+            "CCTV bot connected. Use menu buttons below.",
+            reply_markup=_main_menu(),
+        )
 
     @router.message(Command("help"))
     async def handle_help(message: Message) -> None:
@@ -61,6 +100,22 @@ def build_router(api_client: TelegramApiClient) -> Router:
             "/poll <id> - run manual poll (operator/admin)\n"
             "/help - show this help"
         )
+
+    @router.message(F.text == "Overview")
+    async def handle_menu_overview(message: Message) -> None:
+        await handle_overview(message)
+
+    @router.message(F.text == "Alerts")
+    async def handle_menu_alerts(message: Message) -> None:
+        await handle_alerts(message)
+
+    @router.message(F.text == "Devices")
+    async def handle_menu_devices(message: Message) -> None:
+        await handle_devices(message)
+
+    @router.message(F.text == "Help")
+    async def handle_menu_help(message: Message) -> None:
+        await handle_help(message)
 
     @router.message(Command("overview"))
     async def handle_overview(message: Message) -> None:
@@ -114,7 +169,14 @@ def build_router(api_client: TelegramApiClient) -> Router:
         search = parts[1].strip() if len(parts) > 1 else None
         try:
             payload = await api_client.list_devices(search=search, limit=30)
-            await message.answer(format_devices(payload), parse_mode="Markdown")
+            if message.chat:
+                device_cache_by_chat[message.chat.id] = payload
+            await message.answer(format_devices(payload))
+            if payload:
+                await message.answer(
+                    "Select a device:",
+                    reply_markup=_devices_keyboard(payload),
+                )
         except httpx.HTTPError:
             await message.answer("Failed to fetch devices list.")
 
@@ -141,5 +203,105 @@ def build_router(api_client: TelegramApiClient) -> Router:
             await message.answer("Poll failed.")
         except httpx.HTTPError:
             await message.answer("Poll failed.")
+
+    @router.callback_query(F.data.startswith("devsel:"))
+    async def handle_device_select(callback: CallbackQuery) -> None:
+        if callback.message is None:
+            return
+        chat_id = callback.message.chat.id
+        items = device_cache_by_chat.get(chat_id, [])
+        try:
+            idx = int((callback.data or "").split(":", 1)[1])
+        except (ValueError, IndexError):
+            await callback.answer("Invalid selection", show_alert=True)
+            return
+        if idx < 0 or idx >= len(items):
+            await callback.answer("Device list expired. Run /devices again.", show_alert=True)
+            return
+        device = items[idx]
+        name = device.get("name", "Unknown")
+        device_id = device.get("device_id", "unknown")
+        await callback.message.answer(
+            f"Selected: {name} ({device_id})",
+            reply_markup=_device_actions_keyboard(idx),
+        )
+        await callback.answer()
+
+    @router.callback_query(F.data.startswith("devstatus:"))
+    async def handle_device_status_callback(callback: CallbackQuery) -> None:
+        if callback.message is None or callback.from_user is None:
+            return
+        chat_id = callback.message.chat.id
+        items = device_cache_by_chat.get(chat_id, [])
+        try:
+            idx = int((callback.data or "").split(":", 1)[1])
+        except (ValueError, IndexError):
+            await callback.answer("Invalid action", show_alert=True)
+            return
+        if idx < 0 or idx >= len(items):
+            await callback.answer("Device list expired. Run /devices again.", show_alert=True)
+            return
+
+        allowed, _ = await get_access(api_client, callback.from_user.id)
+        if not allowed:
+            await callback.answer("Access denied", show_alert=True)
+            return
+
+        device_id = items[idx].get("device_id", "")
+        if not device_id:
+            await callback.answer("Invalid device", show_alert=True)
+            return
+
+        try:
+            payload = await api_client.get_device(device_id)
+            await callback.message.answer(format_device_detail(payload))
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 404:
+                await callback.message.answer(f"Device '{device_id}' not found.")
+            else:
+                await callback.message.answer("Failed to fetch device details.")
+        except httpx.HTTPError:
+            await callback.message.answer("Failed to fetch device details.")
+        await callback.answer()
+
+    @router.callback_query(F.data.startswith("devpoll:"))
+    async def handle_device_poll_callback(callback: CallbackQuery) -> None:
+        if callback.message is None or callback.from_user is None:
+            return
+        chat_id = callback.message.chat.id
+        items = device_cache_by_chat.get(chat_id, [])
+        try:
+            idx = int((callback.data or "").split(":", 1)[1])
+        except (ValueError, IndexError):
+            await callback.answer("Invalid action", show_alert=True)
+            return
+        if idx < 0 or idx >= len(items):
+            await callback.answer("Device list expired. Run /devices again.", show_alert=True)
+            return
+
+        allowed, role = await get_access(api_client, callback.from_user.id)
+        if not allowed:
+            await callback.answer("Access denied", show_alert=True)
+            return
+        if role not in ("operator", "admin"):
+            await callback.answer("Insufficient role for poll", show_alert=True)
+            return
+
+        device_id = items[idx].get("device_id", "")
+        if not device_id:
+            await callback.answer("Invalid device", show_alert=True)
+            return
+
+        try:
+            payload = await api_client.poll_device(device_id)
+            await callback.message.answer(format_poll_result(payload))
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 404:
+                await callback.message.answer(f"Device '{device_id}' not found.")
+            else:
+                await callback.message.answer("Poll failed.")
+        except httpx.HTTPError:
+            await callback.message.answer("Poll failed.")
+        await callback.answer()
 
     return router

@@ -61,9 +61,9 @@ def format_poll_result(payload: dict) -> str:
 def format_devices(devices: list[dict]) -> str:
     if not devices:
         return "No devices found."
-    lines = ["Devices (name -> id):"]
-    for d in devices:
+    lines = ["Devices:"]
+    for i, d in enumerate(devices, start=1):
         name = d.get("name", "Unknown")
         device_id = d.get("device_id", "unknown")
-        lines.append(f"- {name} -> `{device_id}`")
+        lines.append(f"{i}. {name} ({device_id})")
     return "\n".join(lines)
