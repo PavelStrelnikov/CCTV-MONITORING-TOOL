@@ -23,6 +23,9 @@ class DiskHealthStatus:
     free_bytes: int
     health_status: str
     checked_at: datetime
+    temperature: int | None = None
+    power_on_hours: int | None = None
+    smart_status: str | None = None
 
 
 @dataclass

@@ -17,6 +17,7 @@ import TableBody from '@mui/material/TableBody';
 import TableCell from '@mui/material/TableCell';
 import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
+import TablePagination from '@mui/material/TablePagination';
 import DevicesIcon from '@mui/icons-material/Router';
 import VideocamIcon from '@mui/icons-material/Videocam';
 import StorageIcon from '@mui/icons-material/Storage';
@@ -35,6 +36,8 @@ export default function Dashboard() {
   const [alerts, setAlerts] = useState<AlertType[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [page, setPage] = useState(0);
+  const rowsPerPage = 10;
 
   const fetchData = async () => {
     try {
@@ -185,17 +188,27 @@ export default function Dashboard() {
             <Table size="small" sx={{ minWidth: 600 }}>
               <TableHead>
                 <TableRow>
-                  <TableCell>{t('table.name')}</TableCell>
-                  <TableCell align="center">{t('table.status')}</TableCell>
-                  <TableCell align="center">{t('table.cameras')}</TableCell>
-                  <TableCell align="center">{t('table.disks')}</TableCell>
-                  <TableCell align="center">{t('table.recording')}</TableCell>
-                  <TableCell align="center">{t('table.time')}</TableCell>
-                  <TableCell align="right">{t('table.lastPoll')}</TableCell>
+                  {[
+                    { label: t('table.name'), align: 'left' as const },
+                    { label: t('table.status'), align: 'center' as const },
+                    { label: t('table.cameras'), align: 'center' as const },
+                    { label: t('table.disks'), align: 'center' as const },
+                    { label: t('table.recording'), align: 'center' as const },
+                    { label: t('table.time'), align: 'center' as const },
+                    { label: t('table.lastPoll'), align: 'right' as const },
+                  ].map((col) => (
+                    <TableCell
+                      key={col.label}
+                      align={col.align}
+                      sx={{ fontWeight: 700, fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.03em', color: 'text.primary' }}
+                    >
+                      {col.label}
+                    </TableCell>
+                  ))}
                 </TableRow>
               </TableHead>
               <TableBody>
-                {sortedDevices.map((dev) => {
+                {sortedDevices.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).map((dev) => {
                   const driftAbs = dev.time_drift != null ? Math.abs(dev.time_drift) : null;
                   let driftLabel = '';
                   if (dev.time_drift != null) {
@@ -273,6 +286,17 @@ export default function Dashboard() {
               </TableBody>
             </Table>
             </Box>
+            {sortedDevices.length > rowsPerPage && (
+              <TablePagination
+                component="div"
+                count={sortedDevices.length}
+                page={page}
+                onPageChange={(_e, p) => setPage(p)}
+                rowsPerPage={rowsPerPage}
+                rowsPerPageOptions={[]}
+                sx={{ borderTop: 1, borderColor: 'divider' }}
+              />
+            )}
           </CardContent>
         </Card>
 

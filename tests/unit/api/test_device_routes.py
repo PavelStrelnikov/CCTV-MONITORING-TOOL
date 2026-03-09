@@ -39,11 +39,22 @@ def test_list_devices_with_data(client, mock_session):
     device.name = "Test NVR"
     device.vendor = "hikvision"
     device.host = "192.168.1.100"
-    device.port = 80
+    device.web_port = 80
+    device.sdk_port = None
+    device.transport_mode = "isapi"
     device.is_active = True
-    mock_result = MagicMock()
-    mock_result.scalars.return_value.all.return_value = [device]
-    mock_session.execute.return_value = mock_result
+    device.model = None
+    device.serial_number = None
+    device.firmware_version = None
+    device.last_poll_at = None
+
+    # First execute call returns device list, second returns tags (empty)
+    mock_result_devices = MagicMock()
+    mock_result_devices.scalars.return_value.all.return_value = [device]
+    mock_result_tags = MagicMock()
+    mock_result_tags.scalars.return_value.all.return_value = []
+    mock_session.execute.side_effect = [mock_result_devices, mock_result_tags]
+
     response = client.get("/api/devices")
     assert response.status_code == 200
     data = response.json()
@@ -55,7 +66,7 @@ def test_create_device(client, mock_session, mock_settings):
     mock_session.commit = AsyncMock()
     response = client.post("/api/devices", json={
         "device_id": "nvr-02", "name": "New NVR", "vendor": "hikvision",
-        "host": "10.0.0.1", "port": 8443, "username": "admin", "password": "secret123",
+        "host": "10.0.0.1", "web_port": 8443, "sdk_port": None, "username": "admin", "password": "secret123",
     })
     assert response.status_code == 201
     data = response.json()
@@ -68,6 +79,6 @@ def test_create_device_duplicate(client, mock_session, mock_settings):
     mock_session.rollback = AsyncMock()
     response = client.post("/api/devices", json={
         "device_id": "nvr-01", "name": "Dup", "vendor": "hikvision",
-        "host": "10.0.0.1", "port": 80, "username": "admin", "password": "pass",
+        "host": "10.0.0.1", "web_port": 80, "sdk_port": None, "username": "admin", "password": "pass",
     })
     assert response.status_code == 409

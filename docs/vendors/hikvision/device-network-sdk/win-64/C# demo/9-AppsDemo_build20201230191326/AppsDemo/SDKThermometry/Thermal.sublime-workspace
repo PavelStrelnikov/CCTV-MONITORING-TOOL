@@ -1,0 +1,230 @@
+{
+	"auto_complete":
+	{
+		"selected_items":
+		[
+		]
+	},
+	"buffers":
+	[
+	],
+	"build_system": "",
+	"build_system_choices":
+	[
+	],
+	"build_varint": "",
+	"command_palette":
+	{
+		"height": 0.0,
+		"last_filter": "",
+		"selected_items":
+		[
+			[
+				"Package Control: i",
+				"Package Control: Install Package"
+			],
+			[
+				"Package Control: in",
+				"Package Control: Install Package"
+			],
+			[
+				"Package Control: ",
+				"Package Control: Install Package"
+			],
+			[
+				"Package Control: package control in",
+				"Package Control: Install Package"
+			],
+			[
+				"Package Control: package control install",
+				"Package Control: Install Package"
+			]
+		],
+		"width": 0.0
+	},
+	"console":
+	{
+		"height": 235.0,
+		"history":
+		[
+			"import urllib. request, os;pf = 'Package Control.sublime-package';ipp = sublime.installed_packages_path();urllib.request.install_opener( urllib.request.build_opener( urllib.request.ProxyHandler()) );open(os.path.join(ipp, pf), 'wb').write(urllib.request.urlopen( 'http://sublime.wbond.net/' + pf.replace(' ','%20')).read());",
+			"import urllib. request, os;"
+		]
+	},
+	"distraction_free":
+	{
+		"menu_visible": true,
+		"show_minimap": false,
+		"show_open_files": false,
+		"show_tabs": false,
+		"side_bar_visible": false,
+		"status_bar_visible": false
+	},
+	"file_history":
+	[
+		"/C/Users/chenzhixue/AppData/Roaming/Sublime Text 3/Packages/MarkdownEditing/README.md",
+		"/E/工作/工业测温2.0/AppsDemo/Thermal/FormEventParam.cs",
+		"/E/工作/工业测温2.0/AppsDemo/Thermal/FormThermalStream.cs",
+		"/E/工作/工业测温2.0/AppsDemo/Thermal/FormFocusCameraParam.cs",
+		"/C/Users/chenzhixue/AppData/Roaming/Sublime Text 3/Packages/SideBarEnhancements/Default (Windows).sublime-keymap",
+		"/C/Users/chenzhixue/Desktop/Temp.cpp",
+		"/C/Users/chenzhixue/AppData/Roaming/Sublime Text 3/Packages/SideBarEnhancements/Side Bar.sublime-settings",
+		"/C/Users/chenzhixue/AppData/Roaming/Sublime Text 3/Packages/Package Control/Package Control.sublime-settings",
+		"/C/Users/chenzhixue/AppData/Roaming/Sublime Text 3/Packages/User/Package Control.sublime-settings",
+		"/E/文档/strOutputParam.xml",
+		"/E/Gtest/私有协议自动化验证方案/开发指南/code/QhcnetsdkGtest_Integration/code/ide/msvc/vs2013/DeviceParameters/DeviceV40.xml",
+		"/E/Gtest/私有协议自动化验证方案/开发指南/code/QhcnetsdkGtest_Integration/res/Module/IntegrationTest/ci_IntegrationTest.xml",
+		"/E/Gtest/私有协议自动化验证方案/开发指南/code/QhcnetsdkGtest_Integration/code/ide/msvc/vs2013/IPC/Pin.xml",
+		"/E/Gtest/私有协议自动化验证方案/开发指南/code/QhcnetsdkGtest_Integration/code/ide/msvc/vs2013/NVR/IPCInfo.xml",
+		"/E/Gtest/私有协议自动化验证方案/开发指南/code/QhcnetsdkGtest_Integration/code/ide/msvc/vs2013/DeviceParameters/Device.xml",
+		"/E/Gtest/私有协议自动化验证方案/开发指南/code/QhcnetsdkGtest_Integration/code/ide/msvc/vs2013/MTD/EventTriggerList.xml",
+		"/E/Gtest/私有协议自动化验证方案/开发指南/code/QhcnetsdkGtest_Integration/code/ide/msvc/vs2013/MTD/EventTrigger.xml",
+		"/C/Users/chenzhixue/Desktop/存储管理/@@_10.17.112.235.xml",
+		"/E/Gtest/私有协议自动化验证方案/开发指南/code/QhcnetsdkGtest_Integration/code/ide/msvc/vs2013/log/@@_10.99.106.162.xml",
+		"/E/Gtest/私有协议自动化验证方案/开发指南/code/QhcnetsdkGtest_Integration/code/ide/msvc/vs2013/hcnetsdk_IT_Storage_Management.cpp",
+		"/E/Gtest/私有协议自动化验证方案/开发指南/code/QhcnetsdkGtest_Integration/code/ide/msvc/vs2013/Storage/NetDisk.xml",
+		"/E/Gtest/私有协议自动化验证方案/开发指南/code/QhcnetsdkGtest_Integration/res/Module/initialization/initializationconfig.xml",
+		"/E/Gtest/私有协议自动化验证方案/开发指南/code/QhcnetsdkGtest_Integration/res/main.xml",
+		"/E/Gtest/私有协议自动化验证方案/开发指南/code/QhcnetsdkGtest_Integration/res/Module/playback/ci_playback.xml",
+		"/E/Gtest/私有协议自动化验证方案/开发指南/code/QhcnetsdkGtest_Integration/res/Module/initialization/ci_initialization.xml",
+		"/E/Gtest/私有协议自动化验证方案/开发指南/code/QhcnetsdkGtest_Integration/code/ide/msvc/vs2013/Storage/Device.xml",
+		"/C/Users/chenzhixue/Desktop/hh.cpp",
+		"/C/Users/chenzhixue/Desktop/aaa.cpp",
+		"/C/Users/chenzhixue/Desktop/TEST_F(NetDvrHCNetSDKAutoTestUserManagementFTest.cpp",
+		"/C/Users/chenzhixue/Desktop/TEST_F(NetDvrHCNetSDKAutoTestUserManagementFTest,cpp",
+		"/C/Program Files/Sublime Text 3/Graphics.cs",
+		"/E/模板/GenerateRegionForm.cs",
+		"/E/Gtest/私有协议自动化验证方案/开发指南/code/QhcnetsdkGtest_Integration/code/ide/msvc/vs2013/hcnetsdk_IT_User_Management.cpp",
+		"/C/Program Files/Sublime Text 3/Line.cs",
+		"/E/Gtest/私有协议自动化验证方案/开发指南/code/QhcnetsdkGtest_Integration/code/ide/msvc/vs2013/hcnetsdk_IT_MixedTargetDetection_Config.cpp",
+		"/E/可用/realPlay/realPlay/realPlayDlg.cpp",
+		"/E/可用/C#测温demo_Build20180803/AppsDemo/TestDemo/FormTestDemo.cs",
+		"/C/Users/chenzhixue/Desktop/hhhh.cpp",
+		"/E/Test/alarm/alarm/alarmDlg.cpp",
+		"/C/Users/chenzhixue/Downloads/CH-HCNetSDKV5.3.6.5_build20180529_Win32/Demo示例/3- C# 开发示例/4-报警布防监听/AlarmCSharpDemo/AlarmDemo.cs",
+		"/E/可用/C#测温demo_Build20180803/AppsDemo/TestDemo/TestDemo.cs",
+		"/E/可用/C#测温demo_Build20180803/AppsDemo/TestDemo/FormTestDemo.Designer.cs",
+		"/E/可用/alarm/alarm/alarmDlg.cpp",
+		"/E/第三十五、三十六周/平台参考源码/共享软件/hik_device_mgr.cpp"
+	],
+	"find":
+	{
+		"height": 44.0
+	},
+	"find_in_files":
+	{
+		"height": 0.0,
+		"where_history":
+		[
+		]
+	},
+	"find_state":
+	{
+		"case_sensitive": false,
+		"find_history":
+		[
+		],
+		"highlight": true,
+		"in_selection": false,
+		"preserve_case": false,
+		"regex": false,
+		"replace_history":
+		[
+		],
+		"reverse": false,
+		"show_context": true,
+		"use_buffer2": true,
+		"whole_word": false,
+		"wrap": true
+	},
+	"groups":
+	[
+		{
+			"sheets":
+			[
+			]
+		}
+	],
+	"incremental_find":
+	{
+		"height": 0.0
+	},
+	"input":
+	{
+		"height": 44.0
+	},
+	"layout":
+	{
+		"cells":
+		[
+			[
+				0,
+				0,
+				1,
+				1
+			]
+		],
+		"cols":
+		[
+			0.0,
+			1.0
+		],
+		"rows":
+		[
+			0.0,
+			1.0
+		]
+	},
+	"menu_visible": true,
+	"output.find_results":
+	{
+		"height": 0.0
+	},
+	"pinned_build_system": "",
+	"project": "Thermal.sublime-project",
+	"replace":
+	{
+		"height": 0.0
+	},
+	"save_all_on_build": true,
+	"select_file":
+	{
+		"height": 0.0,
+		"last_filter": "",
+		"selected_items":
+		[
+		],
+		"width": 0.0
+	},
+	"select_project":
+	{
+		"height": 0.0,
+		"last_filter": "",
+		"selected_items":
+		[
+		],
+		"width": 0.0
+	},
+	"select_symbol":
+	{
+		"height": 0.0,
+		"last_filter": "",
+		"selected_items":
+		[
+		],
+		"width": 0.0
+	},
+	"selected_group": 0,
+	"settings":
+	{
+	},
+	"show_minimap": true,
+	"show_open_files": false,
+	"show_tabs": true,
+	"side_bar_visible": true,
+	"side_bar_width": 250.0,
+	"status_bar_visible": true,
+	"template_settings":
+	{
+	}
+}

@@ -12,7 +12,7 @@ from cctv_monitor.metrics.collector import MetricsCollector
 def device_config():
     return DeviceConfig(
         device_id="nvr-01", name="Test NVR", vendor=DeviceVendor.HIKVISION,
-        host="192.168.1.100", port=80, username="admin", password="password",
+        host="192.168.1.100", web_port=80, sdk_port=None, username="admin", password="password",
         transport_mode=DeviceTransport.ISAPI, polling_policy_id="standard", is_active=True,
     )
 

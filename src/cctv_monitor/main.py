@@ -1,9 +1,14 @@
 """Application entry point."""
 
 import asyncio
+import faulthandler
+import sys
 
 import structlog
 import uvicorn
+
+# Enable faulthandler so native DLL crashes (SIGSEGV etc.) produce a traceback
+faulthandler.enable(file=sys.stderr, all_threads=True)
 
 from cctv_monitor.api.app import create_app
 from cctv_monitor.core.config import Settings
@@ -68,6 +73,27 @@ async def main() -> None:
     app.state.http_client = http_client
     app.state.metrics = metrics
     app.state.scheduler = scheduler
+    # SDK is initialized lazily on first SDK poll request (see deps.py).
+    # Loading the DLL eagerly spawns internal threads that can destabilize
+    # the process even during ISAPI-only polls.
+    app.state.sdk_binding = None
+    app.state.sdk_lib_path = settings.HCNETSDK_LIB_PATH
+
+    # Background polling job
+    from cctv_monitor.polling.background import poll_all_devices
+
+    def _get_sdk_binding():
+        return getattr(app.state, "sdk_binding", None)
+
+    scheduler.add_job(
+        poll_all_devices,
+        "interval",
+        seconds=30,
+        args=[session_factory, settings, registry, http_client, _get_sdk_binding],
+        id="poll_all_devices",
+        replace_existing=True,
+    )
+    logger.info("scheduler.job_registered", job="poll_all_devices", interval_sec=30)
 
     logger.info("cctv_monitor.started")
 
@@ -76,6 +102,7 @@ async def main() -> None:
     try:
         await server.serve()
     finally:
+        # NOTE: SDK cleanup is intentionally skipped — see sdk_bindings.py.
         scheduler.shutdown()
         await http_client.close()
         await engine.dispose()

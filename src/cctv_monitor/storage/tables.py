@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from sqlalchemy import (
     Boolean, DateTime, Float, Integer, String, Text, ForeignKey, Index,
+    JSON, UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -27,7 +28,8 @@ class DeviceTable(Base):
     name: Mapped[str] = mapped_column(String(255))
     vendor: Mapped[str] = mapped_column(String(50))
     host: Mapped[str] = mapped_column(String(255))
-    port: Mapped[int] = mapped_column(Integer, default=80)
+    web_port: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    sdk_port: Mapped[int | None] = mapped_column(Integer, nullable=True)
     username: Mapped[str] = mapped_column(String(255))
     password_encrypted: Mapped[str] = mapped_column(Text)
     transport_mode: Mapped[str] = mapped_column(String(20), default="isapi")
@@ -35,6 +37,13 @@ class DeviceTable(Base):
         String(50), ForeignKey("polling_policies.name"), default="standard"
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    model: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    serial_number: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    firmware_version: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    poll_interval_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
+    last_poll_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_health_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    ignored_channels: Mapped[list | None] = mapped_column(JSON, nullable=True, default=None)
 
 
 class DeviceCapabilityTable(Base):
@@ -99,3 +108,49 @@ class AlertTable(Base):
     status: Mapped[str] = mapped_column(String(20), default="active")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class TagDefinitionTable(Base):
+    __tablename__ = "tag_definitions"
+
+    name: Mapped[str] = mapped_column(String(100), primary_key=True)
+    color: Mapped[str] = mapped_column(String(7), default="#6366F1")  # hex color
+
+
+class DeviceTagTable(Base):
+    __tablename__ = "device_tags"
+    __table_args__ = (
+        UniqueConstraint("device_id", "tag", name="uq_device_tag"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    device_id: Mapped[str] = mapped_column(
+        String(100), ForeignKey("devices.device_id", ondelete="CASCADE"), nullable=False
+    )
+    tag: Mapped[str] = mapped_column(String(100), nullable=False)
+
+
+class SystemSettingTable(Base):
+    __tablename__ = "system_settings"
+
+    key: Mapped[str] = mapped_column(String(100), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class DeviceHealthLogTable(Base):
+    __tablename__ = "device_health_log"
+    __table_args__ = (
+        Index("ix_device_health_log_device_checked", "device_id", "checked_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    device_id: Mapped[str] = mapped_column(
+        String(100), ForeignKey("devices.device_id", ondelete="CASCADE"), nullable=False
+    )
+    reachable: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    camera_count: Mapped[int] = mapped_column(Integer, default=0)
+    online_cameras: Mapped[int] = mapped_column(Integer, default=0)
+    offline_cameras: Mapped[int] = mapped_column(Integer, default=0)
+    disk_ok: Mapped[bool] = mapped_column(Boolean, default=True)
+    response_time_ms: Mapped[float] = mapped_column(Float, default=0)
+    checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

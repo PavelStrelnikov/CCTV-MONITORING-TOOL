@@ -9,11 +9,14 @@ import ListItemButton from '@mui/material/ListItemButton';
 import ListItemIcon from '@mui/material/ListItemIcon';
 import ListItemText from '@mui/material/ListItemText';
 import Toolbar from '@mui/material/Toolbar';
+import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import useMediaQuery from '@mui/material/useMediaQuery';
 import { useTheme } from '@mui/material/styles';
 import Brightness4Icon from '@mui/icons-material/Brightness4';
 import Brightness7Icon from '@mui/icons-material/Brightness7';
+import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import MenuIcon from '@mui/icons-material/Menu';
 import RouterIcon from '@mui/icons-material/Router';
@@ -24,28 +27,87 @@ import VideocamIcon from '@mui/icons-material/Videocam';
 import { useTranslation } from 'react-i18next';
 import { useThemeMode } from '../theme.ts';
 
-const DRAWER_WIDTH = 240;
+const DRAWER_WIDTH = 220;
+const DRAWER_COLLAPSED = 64;
 
 export default function Layout() {
   const { mode, toggleTheme } = useThemeMode();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const muiTheme = useTheme();
   const isMdUp = useMediaQuery(muiTheme.breakpoints.up('md'));
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+  const isRtl = i18n.language === 'he';
+
+  const drawerWidth = isMdUp && collapsed ? DRAWER_COLLAPSED : DRAWER_WIDTH;
 
   const navItems = [
-    { label: t('nav.dashboard'), icon: <DashboardIcon />, to: '/' },
-    { label: t('nav.devices'), icon: <RouterIcon />, to: '/devices' },
-    { label: t('nav.pollLogs'), icon: <HistoryIcon />, to: '/poll-logs' },
-    { label: t('nav.alerts'), icon: <NotificationsIcon />, to: '/alerts' },
-    { label: t('nav.settings'), icon: <SettingsIcon />, to: '/settings' },
+    { label: t('nav.dashboard'), icon: <DashboardIcon />, to: '/', color: '#3B82F6' },
+    { label: t('nav.devices'), icon: <RouterIcon />, to: '/devices', color: '#22C55E' },
+    { label: t('nav.pollLogs'), icon: <HistoryIcon />, to: '/poll-logs', color: '#8B5CF6' },
+    { label: t('nav.alerts'), icon: <NotificationsIcon />, to: '/alerts', color: '#F59E0B' },
+    { label: t('nav.settings'), icon: <SettingsIcon />, to: '/settings', color: '#6B7280' },
   ];
+
+  const drawerContent = (
+    <>
+      {/* Logo / brand */}
+      <Box sx={{ px: collapsed ? 0 : 2, py: 2, display: 'flex', alignItems: 'center', justifyContent: collapsed ? 'center' : 'flex-start', gap: 1.5 }}>
+        <VideocamIcon sx={{ color: 'primary.main', fontSize: 28 }} />
+        {!collapsed && (
+          <Typography variant="h6" sx={{ fontWeight: 700, letterSpacing: '-0.02em', whiteSpace: 'nowrap' }}>
+            {t('nav.brand')}
+          </Typography>
+        )}
+      </Box>
+
+      <List sx={{ px: 0.5 }}>
+        {navItems.map((item) => (
+          <Tooltip key={item.to} title={collapsed ? item.label : ''} placement={isRtl ? 'left' : 'right'}>
+            <ListItemButton
+              component={NavLink}
+              to={item.to}
+              end={item.to === '/'}
+              onClick={() => { if (!isMdUp) setMobileOpen(false); }}
+              sx={{
+                justifyContent: collapsed ? 'center' : 'flex-start',
+                px: collapsed ? 1 : undefined,
+              }}
+            >
+              <ListItemIcon sx={{
+                color: item.color,
+                minWidth: collapsed ? 0 : 40,
+                justifyContent: 'center',
+              }}>
+                {item.icon}
+              </ListItemIcon>
+              {!collapsed && (
+                <ListItemText
+                  primary={item.label}
+                  primaryTypographyProps={{ fontSize: '0.875rem', fontWeight: 500 }}
+                />
+              )}
+            </ListItemButton>
+          </Tooltip>
+        ))}
+      </List>
+
+      {/* Collapse toggle — desktop only */}
+      {isMdUp && (
+        <Box sx={{ mt: 'auto', p: 1, display: 'flex', justifyContent: 'center' }}>
+          <IconButton size="small" onClick={() => setCollapsed((p) => !p)}>
+            {(collapsed !== isRtl) ? <ChevronRightIcon /> : <ChevronLeftIcon />}
+          </IconButton>
+        </Box>
+      )}
+    </>
+  );
 
   return (
     <Box sx={{ display: 'flex', minHeight: '100vh' }}>
       <AppBar
         position="fixed"
-        sx={{ zIndex: (t) => t.zIndex.drawer + 1 }}
+        sx={{ zIndex: (th) => th.zIndex.drawer + 1 }}
       >
         <Toolbar variant="dense" sx={{ justifyContent: 'space-between' }}>
           {!isMdUp && (
@@ -65,39 +127,19 @@ export default function Layout() {
         open={isMdUp ? true : mobileOpen}
         onClose={() => setMobileOpen(false)}
         sx={{
-          width: DRAWER_WIDTH,
+          width: drawerWidth,
           flexShrink: 0,
           '& .MuiDrawer-paper': {
-            width: DRAWER_WIDTH,
+            width: drawerWidth,
             boxSizing: 'border-box',
+            transition: 'width 0.2s ease',
+            overflowX: 'hidden',
+            display: 'flex',
+            flexDirection: 'column',
           },
         }}
       >
-        {/* Logo / brand */}
-        <Box sx={{ px: 2, py: 2.5, display: 'flex', alignItems: 'center', gap: 1.5 }}>
-          <VideocamIcon sx={{ color: 'primary.main', fontSize: 28 }} />
-          <Typography variant="h6" sx={{ fontWeight: 700, letterSpacing: '-0.02em' }}>
-            {t('nav.brand')}
-          </Typography>
-        </Box>
-
-        <List sx={{ px: 0.5 }}>
-          {navItems.map((item) => (
-            <ListItemButton
-              key={item.to}
-              component={NavLink}
-              to={item.to}
-              end={item.to === '/'}
-              onClick={() => { if (!isMdUp) setMobileOpen(false); }}
-            >
-              <ListItemIcon>{item.icon}</ListItemIcon>
-              <ListItemText
-                primary={item.label}
-                primaryTypographyProps={{ fontSize: '0.875rem', fontWeight: 500 }}
-              />
-            </ListItemButton>
-          ))}
-        </List>
+        {drawerContent}
       </Drawer>
 
       <Box
@@ -105,7 +147,8 @@ export default function Layout() {
         sx={{
           flexGrow: 1,
           p: { xs: 1.5, sm: 2, md: 3 },
-          width: { md: `calc(100% - ${DRAWER_WIDTH}px)` },
+          width: { md: `calc(100% - ${drawerWidth}px)` },
+          transition: 'width 0.2s ease',
           mt: '48px', // dense toolbar height
         }}
       >

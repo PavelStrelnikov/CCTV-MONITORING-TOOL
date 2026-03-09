@@ -1,0 +1,229 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="12.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProjectGuid>{921B4A34-E574-4E39-8006-9071A8E614C8}</ProjectGuid>
+    <OutputType>Library</OutputType>
+    <AppDesignerFolder>Properties</AppDesignerFolder>
+    <RootNamespace>SDKThermometry</RootNamespace>
+    <AssemblyName>SDKThermometry</AssemblyName>
+    <TargetFrameworkVersion>v4.5</TargetFrameworkVersion>
+    <FileAlignment>512</FileAlignment>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <OutputPath>..\AppsDemo\bin\Plugins\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
+    <OutputPath>..\AppsDemo\bin\Plugins\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <PropertyGroup>
+    <StartupObject />
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="Newtonsoft.Json, Version=4.5.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\AppsDemo\bin\Newtonsoft.Json.dll</HintPath>
+    </Reference>
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Xml.Linq" />
+    <Reference Include="System.Data.DataSetExtensions" />
+    <Reference Include="Microsoft.CSharp" />
+    <Reference Include="System.Data" />
+    <Reference Include="System.Deployment" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Xml" />
+    <Reference Include="WeifenLuo.WinFormsUI.Docking">
+      <HintPath>..\AppsDemo\bin\base\WeifenLuo.WinFormsUI.Docking.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="FormBasicParam.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="FormBasicParam.Designer.cs">
+      <DependentUpon>FormBasicParam.cs</DependentUpon>
+    </Compile>
+    <Compile Include="FormCorrectThermometry.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="FormCorrectThermometry.Designer.cs">
+      <DependentUpon>FormCorrectThermometry.cs</DependentUpon>
+    </Compile>
+    <Compile Include="FormEventParam.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="FormEventParam.Designer.cs">
+      <DependentUpon>FormEventParam.cs</DependentUpon>
+    </Compile>
+    <Compile Include="FormFocusCameraParam.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="FormFocusCameraParam.Designer.cs">
+      <DependentUpon>FormFocusCameraParam.cs</DependentUpon>
+    </Compile>
+    <Compile Include="FormManualThermometry.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="FormManualThermometry.Designer.cs">
+      <DependentUpon>FormManualThermometry.cs</DependentUpon>
+    </Compile>
+    <Compile Include="FormRealTimeThermometry.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="FormRealTimeThermometry.Designer.cs">
+      <DependentUpon>FormRealTimeThermometry.cs</DependentUpon>
+    </Compile>
+    <Compile Include="FormRulesParam.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="FormRulesParam.Designer.cs">
+      <DependentUpon>FormRulesParam.cs</DependentUpon>
+    </Compile>
+    <Compile Include="FormManualRuleThermmometry.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="FormManualRuleThermmometry.Designer.cs">
+      <DependentUpon>FormManualRuleThermmometry.cs</DependentUpon>
+    </Compile>
+    <Compile Include="FormSDKThermometry.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="FormSDKThermometry.Designer.cs">
+      <DependentUpon>FormSDKThermometry.cs</DependentUpon>
+    </Compile>
+    <Compile Include="FormThermAlg.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="FormThermAlg.Designer.cs">
+      <DependentUpon>FormThermAlg.cs</DependentUpon>
+    </Compile>
+    <Compile Include="FormThermalStream.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="FormThermalStream.Designer.cs">
+      <DependentUpon>FormThermalStream.cs</DependentUpon>
+    </Compile>
+    <Compile Include="FormThermometryAlarm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="FormThermometryAlarm.Designer.cs">
+      <DependentUpon>FormThermometryAlarm.cs</DependentUpon>
+    </Compile>
+    <Compile Include="FormThermometryIntelRule.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="FormThermometryIntelRule.Designer.cs">
+      <DependentUpon>FormThermometryIntelRule.cs</DependentUpon>
+    </Compile>
+    <Compile Include="FormXML.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="FormXML.Designer.cs">
+      <DependentUpon>FormXML.cs</DependentUpon>
+    </Compile>
+    <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="Thermometry.cs" />
+    <EmbeddedResource Include="FormBasicParam.resx">
+      <DependentUpon>FormBasicParam.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="FormCorrectThermometry.resx">
+      <DependentUpon>FormCorrectThermometry.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="FormEventParam.resx">
+      <DependentUpon>FormEventParam.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="FormFocusCameraParam.resx">
+      <DependentUpon>FormFocusCameraParam.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="FormManualThermometry.resx">
+      <DependentUpon>FormManualThermometry.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="FormRealTimeThermometry.resx">
+      <DependentUpon>FormRealTimeThermometry.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="FormRulesParam.resx">
+      <DependentUpon>FormRulesParam.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="FormManualRuleThermmometry.resx">
+      <DependentUpon>FormManualRuleThermmometry.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="FormSDKThermometry.resx">
+      <DependentUpon>FormSDKThermometry.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="FormThermAlg.resx">
+      <DependentUpon>FormThermAlg.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="FormThermalStream.resx">
+      <DependentUpon>FormThermalStream.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="FormThermometryAlarm.resx">
+      <DependentUpon>FormThermometryAlarm.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="FormThermometryIntelRule.resx">
+      <DependentUpon>FormThermometryIntelRule.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="FormXML.resx">
+      <DependentUpon>FormXML.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Properties\Resources.resx">
+      <Generator>ResXFileCodeGenerator</Generator>
+      <LastGenOutput>Resources.Designer.cs</LastGenOutput>
+      <SubType>Designer</SubType>
+    </EmbeddedResource>
+    <Compile Include="Properties\Resources.Designer.cs">
+      <AutoGen>True</AutoGen>
+      <DependentUpon>Resources.resx</DependentUpon>
+      <DesignTime>True</DesignTime>
+    </Compile>
+    <None Include="Properties\Settings.settings">
+      <Generator>SettingsSingleFileGenerator</Generator>
+      <LastGenOutput>Settings.Designer.cs</LastGenOutput>
+    </None>
+    <Compile Include="Properties\Settings.Designer.cs">
+      <AutoGen>True</AutoGen>
+      <DependentUpon>Settings.settings</DependentUpon>
+      <DesignTimeSharedInput>True</DesignTimeSharedInput>
+    </Compile>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="App.config" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\CommonBase\CommonBase.csproj">
+      <Project>{9a087759-8014-4f91-a8f5-c046c6fd77e4}</Project>
+      <Name>CommonBase</Name>
+      <Private>False</Private>
+    </ProjectReference>
+    <ProjectReference Include="..\..\TINYXMLTRANS\TINYXMLTRANS.vcxproj">
+      <Project>{06b7f0b6-90fd-493b-b8c2-b0429ccfa4b4}</Project>
+      <Name>TINYXMLTRANS</Name>
+      <Private>False</Private>
+    </ProjectReference>
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+  <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
+       Other similar extension points exist, see Microsoft.Common.targets.
+  <Target Name="BeforeBuild">
+  </Target>
+  <Target Name="AfterBuild">
+  </Target>
+  -->
+</Project>

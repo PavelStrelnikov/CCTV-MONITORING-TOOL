@@ -1,0 +1,10 @@
+D:\Demo\HCNetSDKV6.1.6.45_build20210302 (for Windows 64-bit)\EN-HCNetSDKV6.1.6.45_build20210302_win64\C# demo\4-Alarm(Arm&Listen)\AlarmCSharpDemo\bin\AlarmCSharpDemo.exe
+D:\Demo\HCNetSDKV6.1.6.45_build20210302 (for Windows 64-bit)\EN-HCNetSDKV6.1.6.45_build20210302_win64\C# demo\4-Alarm(Arm&Listen)\AlarmCSharpDemo\bin\AlarmCSharpDemo.pdb
+D:\Demo\HCNetSDKV6.1.6.45_build20210302 (for Windows 64-bit)\EN-HCNetSDKV6.1.6.45_build20210302_win64\C# demo\4-Alarm(Arm&Listen)\AlarmCSharpDemo\obj\x64\Debug\AlarmCSharpDemo.csprojResolveAssemblyReference.cache
+D:\Demo\HCNetSDKV6.1.6.45_build20210302 (for Windows 64-bit)\EN-HCNetSDKV6.1.6.45_build20210302_win64\C# demo\4-Alarm(Arm&Listen)\AlarmCSharpDemo\obj\x64\Debug\AlarmCSharpDemo.AlarmDemo.resources
+D:\Demo\HCNetSDKV6.1.6.45_build20210302 (for Windows 64-bit)\EN-HCNetSDKV6.1.6.45_build20210302_win64\C# demo\4-Alarm(Arm&Listen)\AlarmCSharpDemo\obj\x64\Debug\AlarmCSharpDemo.Properties.Resources.resources
+D:\Demo\HCNetSDKV6.1.6.45_build20210302 (for Windows 64-bit)\EN-HCNetSDKV6.1.6.45_build20210302_win64\C# demo\4-Alarm(Arm&Listen)\AlarmCSharpDemo\obj\x64\Debug\AlarmCSharpDemo.csproj.GenerateResource.Cache
+D:\Demo\HCNetSDKV6.1.6.45_build20210302 (for Windows 64-bit)\EN-HCNetSDKV6.1.6.45_build20210302_win64\C# demo\4-Alarm(Arm&Listen)\AlarmCSharpDemo\obj\x64\Debug\AlarmCSharpDemo.exe
+D:\Demo\HCNetSDKV6.1.6.45_build20210302 (for Windows 64-bit)\EN-HCNetSDKV6.1.6.45_build20210302_win64\C# demo\4-Alarm(Arm&Listen)\AlarmCSharpDemo\obj\x64\Debug\AlarmCSharpDemo.pdb
+C:\Users\zhanglunliang\Desktop\4-Alarm(Arm&Listen)\AlarmCSharpDemo\obj\x64\Debug\AlarmCSharpDemo.exe
+C:\Users\zhanglunliang\Desktop\4-Alarm(Arm&Listen)\AlarmCSharpDemo\obj\x64\Debug\AlarmCSharpDemo.pdb

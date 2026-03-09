@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     ENCRYPTION_KEY: str
     SNAPSHOT_BASE_DIR: str = "./data/snapshots"
     LOG_LEVEL: str = "INFO"
+    HCNETSDK_LIB_PATH: str | None = None
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 

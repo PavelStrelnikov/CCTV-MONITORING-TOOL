@@ -1,0 +1,204 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="12.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProjectGuid>{0C8C2A9E-7C68-4A00-996B-EE313ACB6D92}</ProjectGuid>
+    <OutputType>Library</OutputType>
+    <AppDesignerFolder>Properties</AppDesignerFolder>
+    <RootNamespace>SDKFaceLib</RootNamespace>
+    <AssemblyName>SDKFaceLib</AssemblyName>
+    <TargetFrameworkVersion>v4.5</TargetFrameworkVersion>
+    <FileAlignment>512</FileAlignment>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <OutputPath>..\AppsDemo\bin\Plugins\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
+    <OutputPath>..\AppsDemo\bin\Plugins\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <PropertyGroup>
+    <StartupObject />
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="Newtonsoft.Json, Version=4.5.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\AppsDemo\bin\Newtonsoft.Json.dll</HintPath>
+    </Reference>
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Xml.Linq" />
+    <Reference Include="System.Data.DataSetExtensions" />
+    <Reference Include="Microsoft.CSharp" />
+    <Reference Include="System.Data" />
+    <Reference Include="System.Deployment" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Xml" />
+    <Reference Include="WeifenLuo.WinFormsUI.Docking">
+      <HintPath>..\AppsDemo\bin\base\WeifenLuo.WinFormsUI.Docking.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="Common\CommonMethod.cs" />
+    <Compile Include="FaceComparision\Face1vN.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="FaceComparision\Face1vN.Designer.cs">
+      <DependentUpon>Face1vN.cs</DependentUpon>
+    </Compile>
+    <Compile Include="FaceComparision\SDKFace1vN.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="FaceLib.cs" />
+    <Compile Include="FaceLibCfg\AddBlockFD.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="FaceLibCfg\AddBlockFD.Designer.cs">
+      <DependentUpon>AddBlockFD.cs</DependentUpon>
+    </Compile>
+    <Compile Include="FaceLibCfg\AddFaceDada.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="FaceLibCfg\AddFaceDada.Designer.cs">
+      <DependentUpon>AddFaceDada.cs</DependentUpon>
+    </Compile>
+    <Compile Include="FaceLibCfg\BlockFDForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="FaceLibCfg\BlockFDForm.Designer.cs">
+      <DependentUpon>BlockFDForm.cs</DependentUpon>
+    </Compile>
+    <Compile Include="FaceLibCfg\SDK\SDKAddBlockFDClass.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="FaceLibCfg\SDK\SDKAddFaceData.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="FaceLibCfg\SDK\SDKBlockFDClass.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="FaceLibCfg\SDK\SDKModifyBlockFDClass.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="FaceLibCfg\SDK\SDKModifyFaceData.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="FaceLibCfg\ModifyBlockFD.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="FaceLibCfg\ModifyBlockFD.Designer.cs">
+      <DependentUpon>ModifyBlockFD.cs</DependentUpon>
+    </Compile>
+    <Compile Include="FaceLibCfg\ModifyFaceDada.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="FaceLibCfg\ModifyFaceDada.Designer.cs">
+      <DependentUpon>ModifyFaceDada.cs</DependentUpon>
+    </Compile>
+    <Compile Include="FaceLibSearchByPic\FaceLibSearchByPicCtrl.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Include="FaceLibSearchByPic\FaceLibSearchByPicCtrl.Designer.cs">
+      <DependentUpon>FaceLibSearchByPicCtrl.cs</DependentUpon>
+    </Compile>
+    <Compile Include="FaceLibSearchByPic\FaceLibSearchByPicDetails.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="FaceLibSearchByPic\FaceLibSearchByPicDetails.Designer.cs">
+      <DependentUpon>FaceLibSearchByPicDetails.cs</DependentUpon>
+    </Compile>
+    <Compile Include="FaceLibSearchByPic\FaceLibSearchByPicForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="FaceLibSearchByPic\FaceLibSearchByPicForm.Designer.cs">
+      <DependentUpon>FaceLibSearchByPicForm.cs</DependentUpon>
+    </Compile>
+    <Compile Include="FaceLibSearchByPic\SDK\SDKFaceLibSearchByPic.cs" />
+    <Compile Include="Properties\AssemblyInfo.cs" />
+    <EmbeddedResource Include="FaceComparision\Face1vN.resx">
+      <DependentUpon>Face1vN.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="FaceLibCfg\AddBlockFD.resx">
+      <DependentUpon>AddBlockFD.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="FaceLibCfg\AddFaceDada.resx">
+      <DependentUpon>AddFaceDada.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="FaceLibCfg\BlockFDForm.resx">
+      <DependentUpon>BlockFDForm.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="FaceLibCfg\ModifyBlockFD.resx">
+      <DependentUpon>ModifyBlockFD.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="FaceLibCfg\ModifyFaceDada.resx">
+      <DependentUpon>ModifyFaceDada.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="FaceLibSearchByPic\FaceLibSearchByPicCtrl.resx">
+      <DependentUpon>FaceLibSearchByPicCtrl.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="FaceLibSearchByPic\FaceLibSearchByPicDetails.resx">
+      <DependentUpon>FaceLibSearchByPicDetails.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="FaceLibSearchByPic\FaceLibSearchByPicForm.resx">
+      <DependentUpon>FaceLibSearchByPicForm.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Properties\Resources.resx">
+      <Generator>ResXFileCodeGenerator</Generator>
+      <LastGenOutput>Resources.Designer.cs</LastGenOutput>
+      <SubType>Designer</SubType>
+    </EmbeddedResource>
+    <Compile Include="Properties\Resources.Designer.cs">
+      <AutoGen>True</AutoGen>
+      <DependentUpon>Resources.resx</DependentUpon>
+      <DesignTime>True</DesignTime>
+    </Compile>
+    <None Include="Properties\Settings.settings">
+      <Generator>SettingsSingleFileGenerator</Generator>
+      <LastGenOutput>Settings.Designer.cs</LastGenOutput>
+    </None>
+    <Compile Include="Properties\Settings.Designer.cs">
+      <AutoGen>True</AutoGen>
+      <DependentUpon>Settings.settings</DependentUpon>
+      <DesignTimeSharedInput>True</DesignTimeSharedInput>
+    </Compile>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="App.config" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\CommonBase\CommonBase.csproj">
+      <Project>{9a087759-8014-4f91-a8f5-c046c6fd77e4}</Project>
+      <Name>CommonBase</Name>
+      <Private>False</Private>
+    </ProjectReference>
+    <ProjectReference Include="..\..\TINYXMLTRANS\TINYXMLTRANS.vcxproj">
+      <Project>{06b7f0b6-90fd-493b-b8c2-b0429ccfa4b4}</Project>
+      <Name>TINYXMLTRANS</Name>
+      <Private>False</Private>
+    </ProjectReference>
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+  <!-- To modify your build process, add your task inside one of the targets below and uncomment it.
+       Other similar extension points exist, see Microsoft.Common.targets.
+  <Target Name="BeforeBuild">
+  </Target>
+  <Target Name="AfterBuild">
+  </Target>
+  -->
+</Project>

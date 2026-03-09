@@ -27,5 +27,33 @@ def get_http_client(request: Request) -> HttpClientManager:
     return request.app.state.http_client
 
 
+def get_sdk_binding(request: Request):
+    """Return SDK binding, initializing lazily on first call."""
+    binding = getattr(request.app.state, "sdk_binding", None)
+    if binding is not None:
+        return binding
+
+    lib_path = getattr(request.app.state, "sdk_lib_path", None)
+    if not lib_path:
+        return None
+
+    import structlog
+    from cctv_monitor.drivers.hikvision.transports.sdk_bindings import HCNetSDKBinding
+
+    log = structlog.get_logger()
+    try:
+        binding = HCNetSDKBinding(lib_path=lib_path)
+        binding.init()
+        request.app.state.sdk_binding = binding
+        log.info("sdk.initialized_lazy", path=lib_path)
+    except Exception as exc:
+        log.warning("sdk.init_failed", error=str(exc))
+        # Clear lib_path so we don't retry on every request
+        request.app.state.sdk_lib_path = None
+        return None
+
+    return binding
+
+
 def get_device_repo(session: AsyncSession = Depends(get_session)) -> DeviceRepository:
     return DeviceRepository(session)

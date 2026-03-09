@@ -9,7 +9,8 @@ build/
 .venv/
 venv/
 data/snapshots/
-third_party/hikvision/device-network-sdk/original/
+third_party/hikvision/sdk/win-64/
+third_party/hikvision/sdk/linux-64/
 *.dll
 *.so
 *.dylib

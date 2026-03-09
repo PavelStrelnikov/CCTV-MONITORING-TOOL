@@ -13,17 +13,17 @@ const typography = {
 // ─── Component overrides that work for both modes ───
 function getComponents(mode: 'light' | 'dark') {
   const isDark = mode === 'dark';
-  const border = isDark ? '#1E293B' : '#E2E8F0';
-  const paperBg = isDark ? '#111827' : '#FFFFFF';
-  const filledBg = isDark ? '#1E293B' : '#F1F5F9';
-  const filledHover = isDark ? '#283548' : '#E2E8F0';
-  const sidebarBg = '#0F1629'; // sidebar stays dark always
-  const appBarBg = '#0F1629';  // appbar stays dark always
+  const border = isDark ? '#1E293B' : '#D5D9E2';
+  const paperBg = isDark ? '#111827' : '#F0EDE8';
+  const filledBg = isDark ? '#1E293B' : '#E8E4DF';
+  const filledHover = isDark ? '#283548' : '#DDD9D3';
+  const sidebarBg = isDark ? '#0F1629' : '#E8E5E0';
+  const appBarBg = isDark ? '#0F1629' : '#E8E5E0';
 
   return {
     MuiCssBaseline: {
       styleOverrides: {
-        body: { backgroundColor: isDark ? '#0B0F1A' : '#F5F5F5' },
+        body: { backgroundColor: isDark ? '#0B0F1A' : '#E4E0DB' },
       },
     },
     MuiCard: {
@@ -39,6 +39,7 @@ function getComponents(mode: 'light' | 'dark') {
         root: {
           backgroundImage: 'none',
           backgroundColor: appBarBg,
+          color: isDark ? '#F1F5F9' : '#2D3748',
           borderBottom: `1px solid ${border}`,
           boxShadow: 'none',
         },
@@ -46,7 +47,11 @@ function getComponents(mode: 'light' | 'dark') {
     },
     MuiDrawer: {
       styleOverrides: {
-        paper: { backgroundColor: sidebarBg, borderRight: `1px solid ${border}` },
+        paper: {
+          backgroundColor: sidebarBg,
+          color: isDark ? '#F1F5F9' : '#2D3748',
+          borderRight: `1px solid ${border}`,
+        },
       },
     },
     MuiChip: {
@@ -92,7 +97,7 @@ function getComponents(mode: 'light' | 'dark') {
       },
     },
     MuiListItemIcon: {
-      styleOverrides: { root: { color: '#94A3B8', minWidth: 40 } },
+      styleOverrides: { root: { minWidth: 40 } },
     },
   };
 }
@@ -110,14 +115,14 @@ export function buildTheme(mode: 'light' | 'dark', direction: 'ltr' | 'rtl' = 'l
       warning: { main: '#F59E0B' },
       info: { main: '#8B5CF6' },
       background: {
-        default: isDark ? '#0B0F1A' : '#F5F5F5',
-        paper: isDark ? '#111827' : '#FFFFFF',
+        default: isDark ? '#0B0F1A' : '#E4E0DB',
+        paper: isDark ? '#111827' : '#F0EDE8',
       },
       text: {
-        primary: isDark ? '#F1F5F9' : '#1E293B',
-        secondary: isDark ? '#94A3B8' : '#64748B',
+        primary: isDark ? '#F1F5F9' : '#2D3748',
+        secondary: isDark ? '#94A3B8' : '#6B7280',
       },
-      divider: isDark ? '#1E293B' : '#E2E8F0',
+      divider: isDark ? '#1E293B' : '#D5D9E2',
     },
     shape,
     typography,
@@ -128,16 +133,25 @@ export function buildTheme(mode: 'light' | 'dark', direction: 'ltr' | 'rtl' = 'l
 /** DataGrid styling — adapts to theme mode */
 export function getDataGridSx(mode: 'light' | 'dark') {
   const isDark = mode === 'dark';
-  const border = isDark ? '#1E293B' : '#E2E8F0';
-  const headerBg = isDark ? '#0F172A' : '#F8FAFC';
-  const stripeBg = isDark ? '#0F172A' : '#F8FAFC';
-  const hoverBg = isDark ? '#1E293B' : '#F1F5F9';
+  const border = isDark ? '#1E293B' : '#D5D9E2';
+  const headerBg = isDark ? '#0F172A' : '#E8E5E0';
+  const stripeBg = isDark ? '#0F172A' : '#EBE8E3';
+  const hoverBg = isDark ? '#1E293B' : '#E0DDD7';
+
+  const headerColor = isDark ? '#E2E8F0' : '#1E293B';
 
   return {
     border: `1px solid ${border}`,
     '& .MuiDataGrid-columnHeaders': {
       backgroundColor: headerBg,
-      borderBottom: `1px solid ${border}`,
+      borderBottom: `2px solid ${border}`,
+    },
+    '& .MuiDataGrid-columnHeaderTitle': {
+      fontWeight: 700,
+      fontSize: '0.85rem',
+      color: headerColor,
+      textTransform: 'uppercase' as const,
+      letterSpacing: '0.03em',
     },
     '& .MuiDataGrid-cell': { borderColor: border },
     '& .MuiDataGrid-row': {

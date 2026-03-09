@@ -8,9 +8,10 @@ class DeviceConfig:
     name: str
     vendor: DeviceVendor
     host: str
-    port: int
+    web_port: int | None
+    sdk_port: int | None
     username: str
-    password: str  # encrypted
+    password: str
     transport_mode: DeviceTransport
     polling_policy_id: str
     is_active: bool

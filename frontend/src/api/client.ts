@@ -1,4 +1,4 @@
-import type { Device, DeviceCreate, DeviceUpdate, DeviceDetail, PollResult, Overview } from '../types';
+import type { Device, DeviceCreate, DeviceUpdate, DeviceDetail, PollResult, Overview, Alert, HealthLogEntry, PollLogEntry, SystemSettings, Tag } from '../types';
 
 const BASE = '/api';
 
@@ -39,5 +39,64 @@ export const api = {
   pollDevice: (deviceId: string) =>
     request<PollResult>(`/devices/${deviceId}/poll`, { method: 'POST' }),
 
+  getCredentials: (deviceId: string) =>
+    request<{ username: string; password: string }>(`/devices/${deviceId}/credentials`),
+
   getOverview: () => request<Overview>('/overview'),
+
+  // Tags
+  getTags: () => request<Tag[]>('/tags'),
+  addTag: (deviceId: string, tag: string) =>
+    request<{ tag: string }>(`/devices/${deviceId}/tags`, {
+      method: 'POST',
+      body: JSON.stringify({ tag }),
+    }),
+  removeTag: (deviceId: string, tag: string) =>
+    request<void>(`/devices/${deviceId}/tags/${tag}`, { method: 'DELETE' }),
+  updateTag: (tagName: string, data: { name?: string; color?: string }) =>
+    request<Tag>(`/tags/${encodeURIComponent(tagName)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  deleteTag: (tagName: string) =>
+    request<void>(`/tags/${encodeURIComponent(tagName)}`, { method: 'DELETE' }),
+
+  // History
+  getDeviceHistory: (deviceId: string, hours = 24) =>
+    request<HealthLogEntry[]>(`/devices/${deviceId}/history?hours=${hours}`),
+
+  // Alerts
+  getAlerts: (params?: { status?: string; device_id?: string }) => {
+    const qs = params
+      ? '?' + new URLSearchParams(
+          Object.entries(params).filter(([, v]) => v != null) as [string, string][]
+        ).toString()
+      : '';
+    return request<Alert[]>(`/alerts${qs}`);
+  },
+
+  // Poll logs (cross-device)
+  getPollLogs: (hours = 24, limit = 500) =>
+    request<PollLogEntry[]>(`/poll-logs?hours=${hours}&limit=${limit}`),
+
+  // System settings
+  getSettings: () => request<SystemSettings>('/settings'),
+  updateSettings: (data: Partial<SystemSettings>) =>
+    request<SystemSettings>('/settings', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  // Ignored channels
+  getIgnoredChannels: (deviceId: string) =>
+    request<string[]>(`/devices/${deviceId}/ignored-channels`),
+  setIgnoredChannels: (deviceId: string, channels: string[]) =>
+    request<string[]>(`/devices/${deviceId}/ignored-channels`, {
+      method: 'PUT',
+      body: JSON.stringify(channels),
+    }),
+
+  // Snapshot URL (timestamp param for cache-busting on refresh)
+  getSnapshotUrl: (deviceId: string, channelId: string) =>
+    `${BASE}/devices/${deviceId}/snapshot/${channelId}?t=${Math.floor(Date.now() / 30000)}`,
 };
