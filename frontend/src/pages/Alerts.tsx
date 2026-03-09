@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Chip from '@mui/material/Chip';
@@ -14,6 +15,7 @@ import { getDataGridSx, useThemeMode } from '../theme.ts';
 import type { Alert as AlertType } from '../types.ts';
 
 export default function Alerts() {
+  const { t } = useTranslation();
   const { mode } = useThemeMode();
   const [alerts, setAlerts] = useState<AlertType[]>([]);
   const [loading, setLoading] = useState(true);
@@ -29,11 +31,11 @@ export default function Alerts() {
       setAlerts(data);
       setError('');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load alerts');
+      setError(err instanceof Error ? err.message : t('alerts.failedLoad'));
     } finally {
       setLoading(false);
     }
-  }, [statusFilter]);
+  }, [statusFilter, t]);
 
   useEffect(() => {
     setLoading(true);
@@ -63,7 +65,7 @@ export default function Alerts() {
   const columns: GridColDef<AlertType>[] = [
     {
       field: 'device_name',
-      headerName: 'Device',
+      headerName: t('table.device'),
       width: 220,
       renderCell: (params) => (
         <Link component={RouterLink} to={`/devices/${params.row.device_id}`} underline="hover" color="inherit">
@@ -73,13 +75,13 @@ export default function Alerts() {
     },
     {
       field: 'alert_type',
-      headerName: 'Type',
+      headerName: t('table.type'),
       width: 160,
       valueFormatter: (value: string) => value?.replace(/_/g, ' ') ?? '',
     },
     {
       field: 'severity',
-      headerName: 'Severity',
+      headerName: t('table.severity'),
       width: 120,
       renderCell: (params) => (
         <Chip label={params.value} size="small" color={severityColor(params.value as string)} />
@@ -87,13 +89,13 @@ export default function Alerts() {
     },
     {
       field: 'message',
-      headerName: 'Message',
+      headerName: t('table.message'),
       flex: 1,
       minWidth: 200,
     },
     {
       field: 'status',
-      headerName: 'Status',
+      headerName: t('table.status'),
       width: 110,
       renderCell: (params) => (
         <Chip
@@ -106,7 +108,7 @@ export default function Alerts() {
     },
     {
       field: 'created_at',
-      headerName: 'Created',
+      headerName: t('table.created'),
       width: 130,
       valueGetter: (value: string) => timeAgo(value),
     },
@@ -115,7 +117,7 @@ export default function Alerts() {
   return (
     <Box>
       <Typography variant="h4" gutterBottom>
-        Alerts
+        {t('alerts.title')}
       </Typography>
 
       {error && (
@@ -128,18 +130,18 @@ export default function Alerts() {
         <TextField
           select
           size="small"
-          label="Status"
+          label={t('table.status')}
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
           sx={{ width: 160 }}
         >
-          <MenuItem value="all">All</MenuItem>
-          <MenuItem value="active">Active</MenuItem>
-          <MenuItem value="resolved">Resolved</MenuItem>
+          <MenuItem value="all">{t('alerts.statusAll')}</MenuItem>
+          <MenuItem value="active">{t('alerts.statusActive')}</MenuItem>
+          <MenuItem value="resolved">{t('alerts.statusResolved')}</MenuItem>
         </TextField>
         <TextField
           size="small"
-          label="Search messages"
+          label={t('alerts.searchMessages')}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           sx={{ width: 250 }}

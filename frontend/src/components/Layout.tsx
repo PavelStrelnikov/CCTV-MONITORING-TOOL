@@ -17,20 +17,22 @@ import HistoryIcon from '@mui/icons-material/History';
 import NotificationsIcon from '@mui/icons-material/Notifications';
 import SettingsIcon from '@mui/icons-material/Settings';
 import VideocamIcon from '@mui/icons-material/Videocam';
+import { useTranslation } from 'react-i18next';
 import { useThemeMode } from '../theme.ts';
 
 const DRAWER_WIDTH = 240;
 
-const navItems = [
-  { label: 'Dashboard', icon: <DashboardIcon />, to: '/' },
-  { label: 'Devices', icon: <RouterIcon />, to: '/devices' },
-  { label: 'Poll Logs', icon: <HistoryIcon />, to: '/poll-logs' },
-  { label: 'Alerts', icon: <NotificationsIcon />, to: '/alerts' },
-  { label: 'Settings', icon: <SettingsIcon />, to: '/settings' },
-];
-
 export default function Layout() {
   const { mode, toggleTheme } = useThemeMode();
+  const { t } = useTranslation();
+
+  const navItems = [
+    { label: t('nav.dashboard'), icon: <DashboardIcon />, to: '/' },
+    { label: t('nav.devices'), icon: <RouterIcon />, to: '/devices' },
+    { label: t('nav.pollLogs'), icon: <HistoryIcon />, to: '/poll-logs' },
+    { label: t('nav.alerts'), icon: <NotificationsIcon />, to: '/alerts' },
+    { label: t('nav.settings'), icon: <SettingsIcon />, to: '/settings' },
+  ];
 
   return (
     <Box sx={{ display: 'flex', minHeight: '100vh' }}>
@@ -60,7 +62,7 @@ export default function Layout() {
         <Box sx={{ px: 2, py: 2.5, display: 'flex', alignItems: 'center', gap: 1.5 }}>
           <VideocamIcon sx={{ color: 'primary.main', fontSize: 28 }} />
           <Typography variant="h6" sx={{ fontWeight: 700, letterSpacing: '-0.02em' }}>
-            CCTV Monitor
+            {t('nav.brand')}
           </Typography>
         </Box>
 

@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Chip from '@mui/material/Chip';
@@ -16,6 +17,7 @@ import { getDataGridSx, useThemeMode } from '../theme.ts';
 import type { PollLogEntry } from '../types.ts';
 
 export default function PollLogs() {
+  const { t } = useTranslation();
   const { mode } = useThemeMode();
   const [logs, setLogs] = useState<PollLogEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -30,11 +32,11 @@ export default function PollLogs() {
       setLogs(data);
       setError('');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load poll logs');
+      setError(err instanceof Error ? err.message : t('pollLogs.failedLoad'));
     } finally {
       setLoading(false);
     }
-  }, [hours]);
+  }, [hours, t]);
 
   useEffect(() => {
     fetchLogs();
@@ -51,13 +53,13 @@ export default function PollLogs() {
   const columns: GridColDef<PollLogEntry>[] = [
     {
       field: 'checked_at',
-      headerName: 'Time',
+      headerName: t('table.time'),
       width: 140,
       valueGetter: (value: string) => timeAgo(value),
     },
     {
       field: 'device_name',
-      headerName: 'Device',
+      headerName: t('table.device'),
       flex: 1,
       minWidth: 180,
       renderCell: (params) => (
@@ -68,11 +70,11 @@ export default function PollLogs() {
     },
     {
       field: 'reachable',
-      headerName: 'Status',
+      headerName: t('table.status'),
       width: 110,
       renderCell: (params) => (
         <Chip
-          label={params.value ? 'Reachable' : 'Unreachable'}
+          label={params.value ? t('status.reachable') : t('status.unreachable')}
           size="small"
           color={params.value ? 'success' : 'error'}
         />
@@ -80,7 +82,7 @@ export default function PollLogs() {
     },
     {
       field: 'online_cameras',
-      headerName: 'Cameras',
+      headerName: t('table.cameras'),
       width: 120,
       renderCell: (params) => {
         const row = params.row;
@@ -95,13 +97,13 @@ export default function PollLogs() {
     },
     {
       field: 'disk_ok',
-      headerName: 'Disks',
+      headerName: t('table.disks'),
       width: 100,
       renderCell: (params) => {
         if (!params.row.reachable) return <span style={{ color: '#64748B' }}>—</span>;
         return (
           <Chip
-            label={params.value ? 'OK' : 'ERROR'}
+            label={params.value ? t('status.ok') : t('status.error')}
             size="small"
             color={params.value ? 'success' : 'error'}
           />
@@ -110,7 +112,7 @@ export default function PollLogs() {
     },
     {
       field: 'response_time_ms',
-      headerName: 'Response',
+      headerName: t('table.response'),
       width: 110,
       renderCell: (params) => {
         if (!params.row.reachable) return <span style={{ color: '#64748B' }}>—</span>;
@@ -123,8 +125,8 @@ export default function PollLogs() {
   return (
     <Box>
       <Box display="flex" alignItems="center" gap={1} mb={1}>
-        <Typography variant="h4">Poll Logs</Typography>
-        <IconButton onClick={fetchLogs} size="small" title="Refresh">
+        <Typography variant="h4">{t('pollLogs.title')}</Typography>
+        <IconButton onClick={fetchLogs} size="small" title={t('pollLogs.refresh')}>
           <RefreshIcon />
         </IconButton>
       </Box>
@@ -139,21 +141,21 @@ export default function PollLogs() {
         <TextField
           select
           size="small"
-          label="Period"
+          label={t('table.period')}
           value={hours}
           onChange={(e) => setHours(Number(e.target.value))}
           sx={{ width: 160 }}
         >
-          <MenuItem value={6}>Last 6 hours</MenuItem>
-          <MenuItem value={12}>Last 12 hours</MenuItem>
-          <MenuItem value={24}>Last 24 hours</MenuItem>
-          <MenuItem value={48}>Last 48 hours</MenuItem>
-          <MenuItem value={72}>Last 3 days</MenuItem>
-          <MenuItem value={168}>Last 7 days</MenuItem>
+          <MenuItem value={6}>{t('pollLogs.last6h')}</MenuItem>
+          <MenuItem value={12}>{t('pollLogs.last12h')}</MenuItem>
+          <MenuItem value={24}>{t('pollLogs.last24h')}</MenuItem>
+          <MenuItem value={48}>{t('pollLogs.last48h')}</MenuItem>
+          <MenuItem value={72}>{t('pollLogs.last3d')}</MenuItem>
+          <MenuItem value={168}>{t('pollLogs.last7d')}</MenuItem>
         </TextField>
         <TextField
           size="small"
-          label="Search device"
+          label={t('pollLogs.searchDevice')}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           sx={{ width: 250 }}

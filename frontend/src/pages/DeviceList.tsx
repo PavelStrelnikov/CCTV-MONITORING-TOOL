@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Link as RouterLink, useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Button from '@mui/material/Button';
@@ -22,6 +23,7 @@ import type { Device, Tag } from '../types.ts';
 import PollDialog from '../components/PollDialog.tsx';
 
 export default function DeviceList() {
+  const { t } = useTranslation();
   const { mode } = useThemeMode();
   const navigate = useNavigate();
   const [devices, setDevices] = useState<Device[]>([]);
@@ -38,11 +40,11 @@ export default function DeviceList() {
       setDevices(data);
       setError('');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load devices');
+      setError(err instanceof Error ? err.message : t('devices.failedLoad'));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     fetchDevices();
@@ -60,18 +62,18 @@ export default function DeviceList() {
   };
 
   const handleDelete = async (deviceId: string) => {
-    if (!confirm(`Delete device ${deviceId}?`)) return;
+    if (!confirm(t('devices.deleteConfirm', { id: deviceId }))) return;
     try {
       await api.deleteDevice(deviceId);
       setDevices((prev) => prev.filter((d) => d.device_id !== deviceId));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Delete failed');
+      setError(err instanceof Error ? err.message : t('devices.deleteFailed'));
     }
   };
 
   const statusLabel = (d: Device) => {
-    if (!d.last_health) return 'UNKNOWN';
-    return d.last_health.reachable ? 'ONLINE' : 'OFFLINE';
+    if (!d.last_health) return t('status.unknown');
+    return d.last_health.reachable ? t('status.online').toUpperCase() : t('status.offline').toUpperCase();
   };
 
   const statusColor = (d: Device): 'success' | 'error' | 'default' => {
@@ -90,7 +92,7 @@ export default function DeviceList() {
         return false;
     }
     if (selectedTags.length > 0) {
-      if (!selectedTags.some((st) => d.tags.some((t) => t.name === st))) return false;
+      if (!selectedTags.some((st) => d.tags.some((tg) => tg.name === st))) return false;
     }
     return true;
   });
@@ -98,7 +100,7 @@ export default function DeviceList() {
   const columns: GridColDef<Device>[] = [
     {
       field: 'name',
-      headerName: 'Name',
+      headerName: t('table.name'),
       flex: 1,
       minWidth: 150,
       renderCell: (params) => (
@@ -111,10 +113,10 @@ export default function DeviceList() {
         </Link>
       ),
     },
-    { field: 'host', headerName: 'Host', width: 150 },
+    { field: 'host', headerName: t('table.host'), width: 150 },
     {
       field: 'web_port',
-      headerName: 'Web Port',
+      headerName: t('table.webPort'),
       width: 100,
       renderCell: (params) => {
         const port = params.row.web_port;
@@ -129,7 +131,7 @@ export default function DeviceList() {
     },
     {
       field: 'sdk_port',
-      headerName: 'SDK Port',
+      headerName: t('table.sdkPort'),
       width: 100,
       renderCell: (params) => {
         const port = params.row.sdk_port;
@@ -142,10 +144,10 @@ export default function DeviceList() {
         return <Chip label={port} size="small" color={color} />;
       },
     },
-    { field: 'vendor', headerName: 'Vendor', width: 100 },
+    { field: 'vendor', headerName: t('table.vendor'), width: 100 },
     {
       field: 'status',
-      headerName: 'Status',
+      headerName: t('table.status'),
       width: 120,
       sortComparator: (a: string, b: string) => a.localeCompare(b),
       valueGetter: (_value, row) => statusLabel(row),
@@ -156,7 +158,7 @@ export default function DeviceList() {
     },
     {
       field: 'cameras',
-      headerName: 'Cameras',
+      headerName: t('table.cameras'),
       width: 100,
       valueGetter: (_value, row) =>
         row.last_health
@@ -165,14 +167,14 @@ export default function DeviceList() {
     },
     {
       field: 'disks',
-      headerName: 'Disks',
+      headerName: t('table.disks'),
       width: 100,
       renderCell: (params) => {
         const h = params.row.last_health;
         if (!h) return '\u2014';
         return (
           <Chip
-            label={h.disk_ok ? 'OK' : 'ERROR'}
+            label={h.disk_ok ? t('status.ok') : t('status.error')}
             color={h.disk_ok ? 'success' : 'error'}
             size="small"
           />
@@ -181,20 +183,20 @@ export default function DeviceList() {
     },
     {
       field: 'response_time',
-      headerName: 'Response',
+      headerName: t('table.response'),
       width: 100,
       valueGetter: (_value, row) =>
         row.last_health ? `${Math.round(row.last_health.response_time_ms)}ms` : '\u2014',
     },
     {
       field: 'last_poll',
-      headerName: 'Last Poll',
+      headerName: t('table.lastPoll'),
       width: 120,
       valueGetter: (_value, row) => timeAgo(row.last_poll_at),
     },
     {
       field: 'actions',
-      headerName: 'Actions',
+      headerName: t('table.actions'),
       width: 150,
       sortable: false,
       filterable: false,
@@ -202,7 +204,7 @@ export default function DeviceList() {
         const id = params.row.device_id;
         return (
           <Box>
-            <Tooltip title="Poll">
+            <Tooltip title={t('common.poll')}>
               <span>
                 <IconButton
                   size="small"
@@ -212,7 +214,7 @@ export default function DeviceList() {
                 </IconButton>
               </span>
             </Tooltip>
-            <Tooltip title="Edit">
+            <Tooltip title={t('common.edit')}>
               <IconButton
                 size="small"
                 onClick={() => navigate(`/devices/${id}/edit`)}
@@ -220,7 +222,7 @@ export default function DeviceList() {
                 <EditIcon fontSize="small" />
               </IconButton>
             </Tooltip>
-            <Tooltip title="Delete">
+            <Tooltip title={t('common.delete')}>
               <IconButton size="small" onClick={() => handleDelete(id)}>
                 <DeleteIcon fontSize="small" />
               </IconButton>
@@ -234,14 +236,14 @@ export default function DeviceList() {
   return (
     <Box>
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-        <Typography variant="h4">Devices ({devices.length})</Typography>
+        <Typography variant="h4">{`${t('devices.title')} (${devices.length})`}</Typography>
         <Button
           variant="contained"
           startIcon={<AddIcon />}
           component={RouterLink}
           to="/devices/add"
         >
-          Add Device
+          {t('devices.addDevice')}
         </Button>
       </Box>
 
@@ -254,7 +256,7 @@ export default function DeviceList() {
       <Box display="flex" gap={2} mb={2}>
         <TextField
           size="small"
-          label="Search"
+          label={t('devices.search')}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           sx={{ width: 250 }}
@@ -262,15 +264,15 @@ export default function DeviceList() {
         <Autocomplete
           multiple
           size="small"
-          options={allTags.map((t) => t.name)}
+          options={allTags.map((tg) => tg.name)}
           value={selectedTags}
           onChange={(_e, v) => setSelectedTags(v)}
           renderInput={(params) => (
-            <TextField {...params} label="Filter by tags" />
+            <TextField {...params} label={t('devices.filterByTags')} />
           )}
           renderTags={(value, getTagProps) =>
             value.map((opt, idx) => {
-              const tagDef = allTags.find((t) => t.name === opt);
+              const tagDef = allTags.find((tg) => tg.name === opt);
               const color = tagDef?.color || '#6366F1';
               return (
                 <Chip

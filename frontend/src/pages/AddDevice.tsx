@@ -1,9 +1,19 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api } from '../api/client';
-import type { DeviceCreate } from '../types';
+import { useTranslation } from 'react-i18next';
+import Box from '@mui/material/Box';
+import Typography from '@mui/material/Typography';
+import TextField from '@mui/material/TextField';
+import MenuItem from '@mui/material/MenuItem';
+import Button from '@mui/material/Button';
+import Paper from '@mui/material/Paper';
+import Stack from '@mui/material/Stack';
+import Alert from '@mui/material/Alert';
+import { api } from '../api/client.ts';
+import type { DeviceCreate } from '../types.ts';
 
 export default function AddDevice() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -12,16 +22,20 @@ export default function AddDevice() {
     name: '',
     vendor: 'hikvision',
     host: '',
-    port: 80,
+    web_port: null,
+    sdk_port: null,
     username: 'admin',
     password: '',
+    transport_mode: 'isapi',
+    poll_interval_seconds: null,
   });
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    setForm(prev => ({
+    const portFields = ['web_port', 'sdk_port', 'poll_interval_seconds'];
+    setForm((prev) => ({
       ...prev,
-      [name]: name === 'port' ? parseInt(value, 10) || 0 : value,
+      [name]: portFields.includes(name) ? (value ? parseInt(value, 10) || null : null) : value,
     }));
   };
 
@@ -31,60 +45,146 @@ export default function AddDevice() {
     setError('');
     try {
       await api.createDevice(form);
-      navigate('/');
+      navigate('/devices');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to add device');
+      setError(err instanceof Error ? err.message : t('addDevice.failed'));
     } finally {
       setSubmitting(false);
     }
   };
 
   return (
-    <div>
-      <h2>Add Device</h2>
-      {error && <div className="error">{error}</div>}
-      <div className="card" style={{ maxWidth: 500 }}>
+    <Box>
+      <Typography variant="h4" gutterBottom>
+        {t('addDevice.title')}
+      </Typography>
+
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {error}
+        </Alert>
+      )}
+
+      <Paper sx={{ maxWidth: 520, p: 3 }}>
         <form onSubmit={handleSubmit}>
-          <div className="form-group">
-            <label>Device ID</label>
-            <input name="device_id" value={form.device_id} onChange={handleChange}
-              placeholder="nvr-building-1" required />
-          </div>
-          <div className="form-group">
-            <label>Name</label>
-            <input name="name" value={form.name} onChange={handleChange}
-              placeholder="Building 1 NVR" required />
-          </div>
-          <div className="form-group">
-            <label>Vendor</label>
-            <select name="vendor" value={form.vendor} onChange={handleChange}>
-              <option value="hikvision">Hikvision</option>
-              <option value="dahua">Dahua</option>
-              <option value="provision">Provision</option>
-            </select>
-          </div>
-          <div className="form-group">
-            <label>Host</label>
-            <input name="host" value={form.host} onChange={handleChange}
-              placeholder="192.168.1.100" required />
-          </div>
-          <div className="form-group">
-            <label>Port</label>
-            <input name="port" type="number" value={form.port} onChange={handleChange} required />
-          </div>
-          <div className="form-group">
-            <label>Username</label>
-            <input name="username" value={form.username} onChange={handleChange} required />
-          </div>
-          <div className="form-group">
-            <label>Password</label>
-            <input name="password" type="password" value={form.password} onChange={handleChange} required />
-          </div>
-          <button type="submit" className="btn-primary" disabled={submitting}>
-            {submitting ? 'Adding...' : 'Add Device'}
-          </button>
+          <Stack spacing={2}>
+            <TextField
+              label={t('addDevice.deviceId')}
+              name="device_id"
+              value={form.device_id}
+              onChange={handleChange}
+              placeholder="nvr-building-1"
+              required
+              size="small"
+              fullWidth
+            />
+            <TextField
+              label={t('addDevice.name')}
+              name="name"
+              value={form.name}
+              onChange={handleChange}
+              placeholder="Building 1 NVR"
+              required
+              size="small"
+              fullWidth
+            />
+            <TextField
+              select
+              label={t('addDevice.vendor')}
+              name="vendor"
+              value={form.vendor}
+              onChange={handleChange}
+              size="small"
+              fullWidth
+            >
+              <MenuItem value="hikvision">Hikvision</MenuItem>
+              <MenuItem value="dahua">Dahua</MenuItem>
+              <MenuItem value="provision">Provision</MenuItem>
+            </TextField>
+            <TextField
+              label={t('addDevice.host')}
+              name="host"
+              value={form.host}
+              onChange={handleChange}
+              placeholder="192.168.1.100"
+              required
+              size="small"
+              fullWidth
+            />
+            <TextField
+              label={t('addDevice.webPort')}
+              name="web_port"
+              type="number"
+              value={form.web_port ?? ''}
+              onChange={handleChange}
+              placeholder="8080"
+              size="small"
+              fullWidth
+            />
+            <TextField
+              label={t('addDevice.sdkPort')}
+              name="sdk_port"
+              type="number"
+              value={form.sdk_port ?? ''}
+              onChange={handleChange}
+              placeholder="8000"
+              size="small"
+              fullWidth
+            />
+            <TextField
+              select
+              label={t('addDevice.transport')}
+              name="transport_mode"
+              value={form.transport_mode}
+              onChange={handleChange}
+              size="small"
+              fullWidth
+            >
+              <MenuItem value="isapi">{t('addDevice.transportIsapi')}</MenuItem>
+              <MenuItem value="sdk">{t('addDevice.transportSdk')}</MenuItem>
+              <MenuItem value="auto">{t('addDevice.transportAuto')}</MenuItem>
+            </TextField>
+            <TextField
+              label={t('addDevice.pollInterval')}
+              name="poll_interval_seconds"
+              type="number"
+              value={form.poll_interval_seconds ?? ''}
+              onChange={handleChange}
+              placeholder="120"
+              size="small"
+              fullWidth
+              helperText={t('addDevice.pollIntervalHelp')}
+            />
+            <TextField
+              label={t('addDevice.username')}
+              name="username"
+              value={form.username}
+              onChange={handleChange}
+              required
+              size="small"
+              fullWidth
+            />
+            <TextField
+              label={t('addDevice.password')}
+              name="password"
+              type="password"
+              value={form.password}
+              onChange={handleChange}
+              required
+              size="small"
+              fullWidth
+            />
+            <Box display="flex" gap={1}>
+              <Button type="submit" variant="contained" disabled={submitting}>
+                {submitting ? t('addDevice.submitting') : t('addDevice.submit')}
+              </Button>
+              <Button variant="outlined" onClick={() => navigate(-1)}>
+                {t('addDevice.cancel')}
+              </Button>
+            </Box>
+          </Stack>
         </form>
-      </div>
-    </div>
+      </Paper>
+    </Box>
   );
 }

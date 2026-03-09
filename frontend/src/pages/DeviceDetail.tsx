@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link as RouterLink } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Button from '@mui/material/Button';
@@ -54,11 +55,12 @@ function TabPanel(props: { children: React.ReactNode; value: number; index: numb
 }
 
 // ---------- Camera card ----------
-function CameraCard({ cam, ignored, onToggleIgnore, snapshotUrl }: {
+function CameraCard({ cam, ignored, onToggleIgnore, snapshotUrl, t }: {
   cam: CameraChannel;
   ignored: boolean;
   onToggleIgnore: (channelId: string) => void;
   snapshotUrl: string;
+  t: (key: string) => string;
 }) {
   const [hovered, setHovered] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
@@ -93,7 +95,7 @@ function CameraCard({ cam, ignored, onToggleIgnore, snapshotUrl }: {
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
         sx={{
-          borderLeft: `4px solid ${borderColor}`,
+          borderInlineStart: `4px solid ${borderColor}`,
           opacity: ignored ? 0.5 : 1,
           cursor: isOnline && !imgError ? 'pointer' : 'default',
           transition: 'transform 0.2s ease, box-shadow 0.2s ease',
@@ -142,7 +144,7 @@ function CameraCard({ cam, ignored, onToggleIgnore, snapshotUrl }: {
                 <Chip label={recLabel} size="small" color={recColor as any} variant="outlined" sx={{ height: 20, fontSize: 11 }} />
               )}
               {ignored && (
-                <Chip label="Ignored" size="small" variant="outlined" sx={{ height: 20, fontSize: 11 }} />
+                <Chip label={t('deviceDetail.ignore')} size="small" variant="outlined" sx={{ height: 20, fontSize: 11 }} />
               )}
             </Box>
           </Box>
@@ -157,7 +159,7 @@ function CameraCard({ cam, ignored, onToggleIgnore, snapshotUrl }: {
                 {cam.status}
               </Typography>
             </Box>
-            <Tooltip title={ignored ? 'Include in monitoring' : 'Exclude from monitoring'}>
+            <Tooltip title={ignored ? t('deviceDetail.includeMonitor') : t('deviceDetail.excludeMonitor')}>
               <FormControlLabel
                 control={
                   <Checkbox
@@ -168,7 +170,7 @@ function CameraCard({ cam, ignored, onToggleIgnore, snapshotUrl }: {
                     sx={{ p: 0.5 }}
                   />
                 }
-                label={<Typography variant="caption" color="text.secondary">Ignore</Typography>}
+                label={<Typography variant="caption" color="text.secondary">{t('deviceDetail.ignore')}</Typography>}
                 sx={{ mr: 0 }}
               />
             </Tooltip>
@@ -231,6 +233,7 @@ function CameraCard({ cam, ignored, onToggleIgnore, snapshotUrl }: {
 
 // ---------- Main component ----------
 export default function DeviceDetail() {
+  const { t } = useTranslation();
   const { mode } = useThemeMode();
   const { deviceId } = useParams<{ deviceId: string }>();
   const navigate = useNavigate();
@@ -291,7 +294,7 @@ export default function DeviceDetail() {
   };
 
   const handleDelete = async () => {
-    if (!deviceId || !confirm('Delete this device?')) return;
+    if (!deviceId || !confirm(t('deviceDetail.deleteConfirm'))) return;
     try {
       await api.deleteDevice(deviceId);
       navigate('/devices');
@@ -303,14 +306,14 @@ export default function DeviceDetail() {
   const handleAddTag = async (value?: string) => {
     const tagName = (value ?? tagInput).trim();
     if (!tagName || !deviceId || addingTag) return;
-    if (detail?.device.tags.some((t) => t.name === tagName)) {
+    if (detail?.device.tags.some((tg) => tg.name === tagName)) {
       setTagInput('');
       return;
     }
     setAddingTag(true);
     try {
       await api.addTag(deviceId, tagName);
-      const existing = allTags.find((t) => t.name === tagName);
+      const existing = allTags.find((tg) => tg.name === tagName);
       const newTag: Tag = existing || { name: tagName, color: '#6366F1' };
       setDetail((prev) =>
         prev ? { ...prev, device: { ...prev.device, tags: [...prev.device.tags, newTag] } } : prev,
@@ -330,7 +333,7 @@ export default function DeviceDetail() {
       await api.removeTag(deviceId, tagName);
       setDetail((prev) =>
         prev
-          ? { ...prev, device: { ...prev.device, tags: prev.device.tags.filter((t) => t.name !== tagName) } }
+          ? { ...prev, device: { ...prev.device, tags: prev.device.tags.filter((tg) => tg.name !== tagName) } }
           : prev,
       );
     } catch (err) {
@@ -385,12 +388,12 @@ export default function DeviceDetail() {
       </Box>
     );
   }
-  if (!detail) return <Alert severity="error">Device not found</Alert>;
+  if (!detail) return <Alert severity="error">{t('deviceDetail.notFound')}</Alert>;
 
   const { device, cameras, disks, alerts } = detail;
   const health = detail.health ?? device.last_health;
 
-  const statusLabel = health ? (health.reachable ? 'ONLINE' : 'OFFLINE') : 'UNKNOWN';
+  const statusLabel = health ? (health.reachable ? t('status.online').toUpperCase() : t('status.offline').toUpperCase()) : t('status.unknown');
   const statusColor: 'success' | 'error' | 'default' = health
     ? health.reachable
       ? 'success'
@@ -404,22 +407,22 @@ export default function DeviceDetail() {
 
   // ---------- Disk columns ----------
   const diskColumns: GridColDef<Disk>[] = [
-    { field: 'disk_id', headerName: 'Disk ID', width: 100 },
+    { field: 'disk_id', headerName: t('deviceDetail.diskId'), width: 100 },
     {
       field: 'capacity',
-      headerName: 'Capacity',
+      headerName: t('deviceDetail.capacity'),
       width: 120,
       valueGetter: (_v, row) => formatBytes(row.capacity_bytes),
     },
     {
       field: 'free',
-      headerName: 'Free Space',
+      headerName: t('deviceDetail.freeSpace'),
       width: 120,
       valueGetter: (_v, row) => formatBytes(row.free_bytes),
     },
     {
       field: 'used_pct',
-      headerName: 'Used %',
+      headerName: t('deviceDetail.usedPct'),
       width: 160,
       renderCell: (params) => {
         const cap = params.row.capacity_bytes;
@@ -440,7 +443,7 @@ export default function DeviceDetail() {
     },
     {
       field: 'status',
-      headerName: 'Status',
+      headerName: t('table.status'),
       width: 100,
       renderCell: (params) => (
         <Chip
@@ -450,10 +453,10 @@ export default function DeviceDetail() {
         />
       ),
     },
-    { field: 'health_status', headerName: 'Health', width: 120 },
+    { field: 'health_status', headerName: t('deviceDetail.health'), width: 120 },
     {
       field: 'temperature',
-      headerName: 'Temp',
+      headerName: t('deviceDetail.temp'),
       width: 80,
       renderCell: (params) => {
         const temp = params.row.temperature;
@@ -464,7 +467,7 @@ export default function DeviceDetail() {
     },
     {
       field: 'power_on_hours',
-      headerName: 'Working Time',
+      headerName: t('deviceDetail.workingTime'),
       width: 140,
       renderCell: (params) => {
         const hours = params.row.power_on_hours;
@@ -479,7 +482,7 @@ export default function DeviceDetail() {
     },
     {
       field: 'smart_status',
-      headerName: 'S.M.A.R.T.',
+      headerName: t('deviceDetail.smart'),
       width: 100,
       renderCell: (params) => {
         const s = params.row.smart_status;
@@ -519,7 +522,7 @@ export default function DeviceDetail() {
           >
             {(device.model || device.vendor) && (
               <>
-                <Typography variant="body2" className="label">Model</Typography>
+                <Typography variant="body2" className="label">{t('deviceDetail.model')}</Typography>
                 <Typography variant="body2" className="value">
                   {[device.vendor, device.model].filter(Boolean).join(' ')}
                   {device.firmware_version ? ` (v${device.firmware_version})` : ''}
@@ -528,38 +531,38 @@ export default function DeviceDetail() {
             )}
             {device.serial_number && (
               <>
-                <Typography variant="body2" className="label">S/N</Typography>
+                <Typography variant="body2" className="label">{t('deviceDetail.serialNumber')}</Typography>
                 <Typography variant="body2" className="value">{device.serial_number}</Typography>
               </>
             )}
-            <Typography variant="body2" className="label">Address</Typography>
+            <Typography variant="body2" className="label">{t('deviceDetail.address')}</Typography>
             <Typography variant="body2" className="value">
               {device.host}
               {device.web_port ? `:${device.web_port}` : ''}
               {device.sdk_port ? ` (SDK: ${device.sdk_port})` : ''}
             </Typography>
 
-            <Typography variant="body2" className="label">Transport</Typography>
+            <Typography variant="body2" className="label">{t('deviceDetail.transport')}</Typography>
             <Typography variant="body2" className="value" sx={{ textTransform: 'uppercase' }}>
               {device.transport_mode}
             </Typography>
 
             {device.last_poll_at && (
               <>
-                <Typography variant="body2" className="label">Last poll</Typography>
+                <Typography variant="body2" className="label">{t('deviceDetail.lastPoll')}</Typography>
                 <Typography variant="body2" className="value">{timeAgo(device.last_poll_at)}</Typography>
               </>
             )}
 
             {/* Credentials row */}
-            <Typography variant="body2" className="label">Credentials</Typography>
+            <Typography variant="body2" className="label">{t('deviceDetail.credentials')}</Typography>
             <Box display="flex" alignItems="center" gap={0.5}>
               {showPassword && credentials ? (
                 <>
                   <Typography variant="body2" className="value">
                     {credentials.username} / {credentials.password}
                   </Typography>
-                  <Tooltip title="Copy password">
+                  <Tooltip title={t('deviceDetail.copyPassword')}>
                     <IconButton size="small" onClick={() => handleCopy(credentials.password)} sx={{ p: 0.25 }}>
                       <ContentCopyIcon sx={{ fontSize: 14 }} />
                     </IconButton>
@@ -570,7 +573,7 @@ export default function DeviceDetail() {
                   ••••••••
                 </Typography>
               )}
-              <Tooltip title={showPassword ? 'Hide credentials' : 'Show credentials'}>
+              <Tooltip title={showPassword ? t('deviceDetail.hideCreds') : t('deviceDetail.showCreds')}>
                 <IconButton size="small" onClick={handleShowCredentials} disabled={loadingCreds} sx={{ p: 0.25 }}>
                   {loadingCreds ? (
                     <CircularProgress size={14} />
@@ -589,12 +592,12 @@ export default function DeviceDetail() {
             <Chip
               label={
                 absDrift! < 5
-                  ? 'Time synced'
+                  ? t('deviceDetail.timeSynced')
                   : absDrift! < 60
-                    ? `Time drift: ${driftSeconds > 0 ? '+' : ''}${driftSeconds}s`
+                    ? `${t('deviceDetail.timeDrift')}: ${driftSeconds > 0 ? '+' : ''}${driftSeconds}s`
                     : absDrift! < 3600
-                      ? `Time drift: ${driftSeconds > 0 ? '+' : ''}${Math.round(driftSeconds / 60)}min`
-                      : `Time drift: ${driftSeconds > 0 ? '+' : ''}${(driftSeconds / 3600).toFixed(1)}h`
+                      ? `${t('deviceDetail.timeDrift')}: ${driftSeconds > 0 ? '+' : ''}${Math.round(driftSeconds / 60)}min`
+                      : `${t('deviceDetail.timeDrift')}: ${driftSeconds > 0 ? '+' : ''}${(driftSeconds / 3600).toFixed(1)}h`
               }
               size="small"
               color={absDrift! < 30 ? 'success' : absDrift! < 300 ? 'warning' : 'error'}
@@ -605,27 +608,27 @@ export default function DeviceDetail() {
 
           {/* Tags */}
           <Box display="flex" alignItems="center" gap={0.5} mt={1} flexWrap="wrap">
-            {device.tags.map((t) => (
+            {device.tags.map((tg) => (
               <Chip
-                key={t.name}
-                label={t.name}
+                key={tg.name}
+                label={tg.name}
                 size="small"
-                onDelete={() => handleRemoveTag(t.name)}
-                sx={{ bgcolor: t.color + '33', borderColor: t.color, color: t.color, fontWeight: 500 }}
+                onDelete={() => handleRemoveTag(tg.name)}
+                sx={{ bgcolor: tg.color + '33', borderColor: tg.color, color: tg.color, fontWeight: 500 }}
                 variant="outlined"
               />
             ))}
             <Autocomplete
               freeSolo
               size="small"
-              options={allTags.filter((t) => !device.tags.some((dt) => dt.name === t.name)).map((t) => t.name)}
+              options={allTags.filter((tg) => !device.tags.some((dt) => dt.name === tg.name)).map((tg) => tg.name)}
               inputValue={tagInput}
               onInputChange={(_e, v) => setTagInput(v)}
               onChange={(_e, v) => { if (v) { setTagInput(v); handleAddTag(v); } }}
               renderInput={(params) => (
                 <TextField
                   {...params}
-                  placeholder="add tag"
+                  placeholder={t('deviceDetail.addTag')}
                   onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddTag(); } }}
                   sx={{ width: 150, '& .MuiInputBase-input': { py: 0.5, px: 1, fontSize: 13 } }}
                   disabled={addingTag}
@@ -638,13 +641,13 @@ export default function DeviceDetail() {
 
         <Stack direction="row" spacing={1}>
           <Button variant="contained" onClick={() => setPollOpen(true)} startIcon={<NetworkCheckIcon />}>
-            Poll Now
+            {t('deviceDetail.pollNow')}
           </Button>
           <Button variant="outlined" startIcon={<EditIcon />} component={RouterLink} to={`/devices/${deviceId}/edit`}>
-            Edit
+            {t('deviceDetail.edit')}
           </Button>
           <Button variant="outlined" color="error" startIcon={<DeleteIcon />} onClick={handleDelete}>
-            Delete
+            {t('deviceDetail.delete')}
           </Button>
         </Stack>
       </Box>
@@ -658,17 +661,17 @@ export default function DeviceDetail() {
       {/* ---------- Tabs ---------- */}
       <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
         <Tabs value={tab} onChange={(_e, v: number) => setTab(v)}>
-          <Tab label={`Cameras (${cameras.length}${ignoredChannels.size > 0 ? `, ${ignoredChannels.size} ignored` : ''})`} />
-          <Tab label={`Disks (${disks.length})`} />
-          <Tab label="History" />
-          <Tab label={`Alerts (${alerts.length})`} />
+          <Tab label={`${t('deviceDetail.cameras')} (${cameras.length}${ignoredChannels.size > 0 ? `, ${ignoredChannels.size} ${t('deviceDetail.ignored')}` : ''})`} />
+          <Tab label={`${t('deviceDetail.disks')} (${disks.length})`} />
+          <Tab label={t('deviceDetail.history')} />
+          <Tab label={`${t('deviceDetail.alerts')} (${alerts.length})`} />
         </Tabs>
       </Box>
 
       {/* ----- Tab 0: Cameras ----- */}
       <TabPanel value={tab} index={0}>
         {cameras.length === 0 ? (
-          <Typography color="text.secondary">No cameras found</Typography>
+          <Typography color="text.secondary">{t('deviceDetail.noCameras')}</Typography>
         ) : (
           <Box
             sx={{
@@ -678,7 +681,7 @@ export default function DeviceDetail() {
             }}
           >
             {cameras.map((c) => (
-              <CameraCard key={c.channel_id} cam={c} ignored={ignoredChannels.has(c.channel_id)} onToggleIgnore={handleToggleIgnore} snapshotUrl={api.getSnapshotUrl(deviceId!, c.channel_id)} />
+              <CameraCard key={c.channel_id} cam={c} ignored={ignoredChannels.has(c.channel_id)} onToggleIgnore={handleToggleIgnore} snapshotUrl={api.getSnapshotUrl(deviceId!, c.channel_id)} t={t} />
             ))}
           </Box>
         )}
@@ -687,7 +690,7 @@ export default function DeviceDetail() {
       {/* ----- Tab 1: Disks ----- */}
       <TabPanel value={tab} index={1}>
         {disks.length === 0 ? (
-          <Typography color="text.secondary">No disks found</Typography>
+          <Typography color="text.secondary">{t('deviceDetail.noDisks')}</Typography>
         ) : (
           <DataGrid
             rows={disks}
@@ -724,7 +727,7 @@ export default function DeviceDetail() {
             <CircularProgress />
           </Box>
         ) : history.length === 0 ? (
-          <Typography color="text.secondary">No history data yet</Typography>
+          <Typography color="text.secondary">{t('deviceDetail.noHistory')}</Typography>
         ) : (
           <LineChart
             height={350}
@@ -732,23 +735,23 @@ export default function DeviceDetail() {
               {
                 data: historyDates,
                 scaleType: 'time',
-                label: 'Time',
+                label: t('deviceDetail.timeAxis'),
               },
             ]}
             yAxis={[
-              { id: 'time_axis', label: 'Response Time (ms)' },
-              { id: 'cam_axis', label: 'Online Cameras' },
+              { id: 'time_axis', label: t('deviceDetail.responseTime') },
+              { id: 'cam_axis', label: t('deviceDetail.onlineCameras') },
             ]}
             series={[
               {
                 data: historyResponseTime,
-                label: 'Response Time (ms)',
+                label: t('deviceDetail.responseTime'),
                 yAxisId: 'time_axis',
                 showMark: false,
               },
               {
                 data: historyOnlineCameras,
-                label: 'Online Cameras',
+                label: t('deviceDetail.onlineCameras'),
                 yAxisId: 'cam_axis',
                 showMark: false,
               },
@@ -761,16 +764,16 @@ export default function DeviceDetail() {
       {/* ----- Tab 3: Alerts ----- */}
       <TabPanel value={tab} index={3}>
         {alerts.length === 0 ? (
-          <Typography color="text.secondary">No alerts</Typography>
+          <Typography color="text.secondary">{t('deviceDetail.noAlerts')}</Typography>
         ) : (
           <Table size="small">
             <TableHead>
               <TableRow>
-                <TableCell>Type</TableCell>
-                <TableCell>Severity</TableCell>
-                <TableCell>Message</TableCell>
-                <TableCell>Created</TableCell>
-                <TableCell>Status</TableCell>
+                <TableCell>{t('table.type')}</TableCell>
+                <TableCell>{t('table.severity')}</TableCell>
+                <TableCell>{t('table.message')}</TableCell>
+                <TableCell>{t('table.created')}</TableCell>
+                <TableCell>{t('table.status')}</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
