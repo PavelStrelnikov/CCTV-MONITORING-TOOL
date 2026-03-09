@@ -145,7 +145,7 @@ export default function Dashboard() {
       <Box
         sx={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+          gridTemplateColumns: { xs: 'repeat(2, 1fr)', sm: 'repeat(auto-fit, minmax(180px, 1fr))' },
           gap: 2,
           mb: 3,
         }}
@@ -181,7 +181,8 @@ export default function Dashboard() {
             <Typography variant="h6" sx={{ px: 2, pt: 2, pb: 1 }}>
               {t('dashboard.devices')}
             </Typography>
-            <Table size="small">
+            <Box sx={{ overflowX: 'auto' }}>
+            <Table size="small" sx={{ minWidth: 600 }}>
               <TableHead>
                 <TableRow>
                   <TableCell>{t('table.name')}</TableCell>
@@ -271,6 +272,7 @@ export default function Dashboard() {
                 )}
               </TableBody>
             </Table>
+            </Box>
           </CardContent>
         </Card>
 

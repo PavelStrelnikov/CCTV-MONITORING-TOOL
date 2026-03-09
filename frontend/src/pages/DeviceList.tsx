@@ -235,7 +235,7 @@ export default function DeviceList() {
 
   return (
     <Box>
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+      <Box display="flex" justifyContent="space-between" alignItems="center" mb={2} flexWrap="wrap" gap={1}>
         <Typography variant="h4">{`${t('devices.title')} (${devices.length})`}</Typography>
         <Button
           variant="contained"
@@ -253,13 +253,13 @@ export default function DeviceList() {
         </Alert>
       )}
 
-      <Box display="flex" gap={2} mb={2}>
+      <Box display="flex" gap={2} mb={2} flexWrap="wrap">
         <TextField
           size="small"
           label={t('devices.search')}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          sx={{ width: 250 }}
+          sx={{ width: { xs: '100%', sm: 250 } }}
         />
         <Autocomplete
           multiple
@@ -286,25 +286,29 @@ export default function DeviceList() {
               );
             })
           }
-          sx={{ minWidth: 250 }}
+          sx={{ minWidth: { xs: '100%', sm: 250 } }}
         />
       </Box>
 
-      <DataGrid
-        rows={filtered}
-        columns={columns}
-        getRowId={(row) => row.device_id}
-        loading={loading}
-        density="compact"
-        pageSizeOptions={[25, 50, 100]}
-        initialState={{ pagination: { paginationModel: { pageSize: 25 } } }}
-        disableRowSelectionOnClick
-        autoHeight
-        sx={{
-          ...getDataGridSx(mode),
-          '& .MuiDataGrid-cell': { display: 'flex', alignItems: 'center' },
-        }}
-      />
+      <Box sx={{ width: '100%', overflowX: 'auto' }}>
+        <Box sx={{ minWidth: 900 }}>
+          <DataGrid
+            rows={filtered}
+            columns={columns}
+            getRowId={(row) => row.device_id}
+            loading={loading}
+            density="compact"
+            pageSizeOptions={[25, 50, 100]}
+            initialState={{ pagination: { paginationModel: { pageSize: 25 } } }}
+            disableRowSelectionOnClick
+            autoHeight
+            sx={{
+              ...getDataGridSx(mode),
+              '& .MuiDataGrid-cell': { display: 'flex', alignItems: 'center' },
+            }}
+          />
+        </Box>
+      </Box>
 
       {pollDialogDevice && (
         <PollDialog

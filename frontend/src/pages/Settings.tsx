@@ -74,7 +74,7 @@ export default function Settings() {
         </Alert>
       )}
 
-      <Paper sx={{ p: 3, maxWidth: 500 }}>
+      <Paper sx={{ p: { xs: 2, sm: 3 }, maxWidth: { xs: '100%', sm: 500 } }}>
         <Typography variant="h6" gutterBottom>
           {t('settings.polling')}
         </Typography>
@@ -107,7 +107,7 @@ export default function Settings() {
         </Button>
       </Paper>
 
-      <Paper sx={{ p: 3, maxWidth: 500, mt: 3 }}>
+      <Paper sx={{ p: { xs: 2, sm: 3 }, maxWidth: { xs: '100%', sm: 500 }, mt: 3 }}>
         <Typography variant="h6" gutterBottom>
           {t('settings.language')}
         </Typography>

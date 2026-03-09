@@ -639,7 +639,7 @@ export default function DeviceDetail() {
           </Box>
         </Box>
 
-        <Stack direction="row" spacing={1}>
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
           <Button variant="contained" onClick={() => setPollOpen(true)} startIcon={<NetworkCheckIcon />}>
             {t('deviceDetail.pollNow')}
           </Button>
@@ -676,7 +676,7 @@ export default function DeviceDetail() {
           <Box
             sx={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
+              gridTemplateColumns: { xs: 'repeat(auto-fill, minmax(160px, 1fr))', sm: 'repeat(auto-fill, minmax(220px, 1fr))' },
               gap: 2,
             }}
           >
@@ -692,19 +692,23 @@ export default function DeviceDetail() {
         {disks.length === 0 ? (
           <Typography color="text.secondary">{t('deviceDetail.noDisks')}</Typography>
         ) : (
-          <DataGrid
-            rows={disks}
-            columns={diskColumns}
-            getRowId={(row) => row.disk_id}
-            density="compact"
-            autoHeight
-            disableRowSelectionOnClick
-            hideFooter={disks.length <= 25}
-            sx={{
-              ...getDataGridSx(mode),
-              '& .MuiDataGrid-cell': { display: 'flex', alignItems: 'center' },
-            }}
-          />
+          <Box sx={{ width: '100%', overflowX: 'auto' }}>
+            <Box sx={{ minWidth: 800 }}>
+              <DataGrid
+                rows={disks}
+                columns={diskColumns}
+                getRowId={(row) => row.disk_id}
+                density="compact"
+                autoHeight
+                disableRowSelectionOnClick
+                hideFooter={disks.length <= 25}
+                sx={{
+                  ...getDataGridSx(mode),
+                  '& .MuiDataGrid-cell': { display: 'flex', alignItems: 'center' },
+                }}
+              />
+            </Box>
+          </Box>
         )}
       </TabPanel>
 
@@ -766,47 +770,49 @@ export default function DeviceDetail() {
         {alerts.length === 0 ? (
           <Typography color="text.secondary">{t('deviceDetail.noAlerts')}</Typography>
         ) : (
-          <Table size="small">
-            <TableHead>
-              <TableRow>
-                <TableCell>{t('table.type')}</TableCell>
-                <TableCell>{t('table.severity')}</TableCell>
-                <TableCell>{t('table.message')}</TableCell>
-                <TableCell>{t('table.created')}</TableCell>
-                <TableCell>{t('table.status')}</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {alerts.map((a: AlertType) => (
-                <TableRow key={a.id}>
-                  <TableCell>{a.alert_type.replace(/_/g, ' ')}</TableCell>
-                  <TableCell>
-                    <Chip
-                      label={a.severity}
-                      size="small"
-                      color={
-                        a.severity.toLowerCase() === 'critical'
-                          ? 'error'
-                          : a.severity.toLowerCase() === 'warning'
-                            ? 'warning'
-                            : 'info'
-                      }
-                    />
-                  </TableCell>
-                  <TableCell>{a.message}</TableCell>
-                  <TableCell>{timeAgo(a.created_at)}</TableCell>
-                  <TableCell>
-                    <Chip
-                      label={a.status}
-                      size="small"
-                      color={a.status === 'active' ? 'error' : 'default'}
-                      variant="outlined"
-                    />
-                  </TableCell>
+          <Box sx={{ overflowX: 'auto' }}>
+            <Table size="small" sx={{ minWidth: 500 }}>
+              <TableHead>
+                <TableRow>
+                  <TableCell>{t('table.type')}</TableCell>
+                  <TableCell>{t('table.severity')}</TableCell>
+                  <TableCell>{t('table.message')}</TableCell>
+                  <TableCell>{t('table.created')}</TableCell>
+                  <TableCell>{t('table.status')}</TableCell>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHead>
+              <TableBody>
+                {alerts.map((a: AlertType) => (
+                  <TableRow key={a.id}>
+                    <TableCell>{a.alert_type.replace(/_/g, ' ')}</TableCell>
+                    <TableCell>
+                      <Chip
+                        label={a.severity}
+                        size="small"
+                        color={
+                          a.severity.toLowerCase() === 'critical'
+                            ? 'error'
+                            : a.severity.toLowerCase() === 'warning'
+                              ? 'warning'
+                              : 'info'
+                        }
+                      />
+                    </TableCell>
+                    <TableCell>{a.message}</TableCell>
+                    <TableCell>{timeAgo(a.created_at)}</TableCell>
+                    <TableCell>
+                      <Chip
+                        label={a.status}
+                        size="small"
+                        color={a.status === 'active' ? 'error' : 'default'}
+                        variant="outlined"
+                      />
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </Box>
         )}
       </TabPanel>
 

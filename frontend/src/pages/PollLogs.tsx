@@ -137,14 +137,14 @@ export default function PollLogs() {
         </Alert>
       )}
 
-      <Box display="flex" gap={2} mb={2}>
+      <Box display="flex" gap={2} mb={2} flexWrap="wrap">
         <TextField
           select
           size="small"
           label={t('table.period')}
           value={hours}
           onChange={(e) => setHours(Number(e.target.value))}
-          sx={{ width: 160 }}
+          sx={{ width: { xs: '100%', sm: 160 } }}
         >
           <MenuItem value={6}>{t('pollLogs.last6h')}</MenuItem>
           <MenuItem value={12}>{t('pollLogs.last12h')}</MenuItem>
@@ -158,28 +158,32 @@ export default function PollLogs() {
           label={t('pollLogs.searchDevice')}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          sx={{ width: 250 }}
+          sx={{ width: { xs: '100%', sm: 250 } }}
         />
       </Box>
 
-      <DataGrid
-        rows={filtered}
-        columns={columns}
-        loading={loading}
-        density="compact"
-        pageSizeOptions={[25, 50, 100]}
-        initialState={{
-          pagination: { paginationModel: { pageSize: 50 } },
-          sorting: { sortModel: [{ field: 'checked_at', sort: 'desc' }] },
-        }}
-        getRowId={(row) => `${row.device_id}_${row.checked_at}`}
-        disableRowSelectionOnClick
-        autoHeight
-        sx={{
-          ...getDataGridSx(mode),
-          '& .MuiDataGrid-cell': { display: 'flex', alignItems: 'center' },
-        }}
-      />
+      <Box sx={{ width: '100%', overflowX: 'auto' }}>
+        <Box sx={{ minWidth: 700 }}>
+          <DataGrid
+            rows={filtered}
+            columns={columns}
+            loading={loading}
+            density="compact"
+            pageSizeOptions={[25, 50, 100]}
+            initialState={{
+              pagination: { paginationModel: { pageSize: 50 } },
+              sorting: { sortModel: [{ field: 'checked_at', sort: 'desc' }] },
+            }}
+            getRowId={(row) => `${row.device_id}_${row.checked_at}`}
+            disableRowSelectionOnClick
+            autoHeight
+            sx={{
+              ...getDataGridSx(mode),
+              '& .MuiDataGrid-cell': { display: 'flex', alignItems: 'center' },
+            }}
+          />
+        </Box>
+      </Box>
     </Box>
   );
 }

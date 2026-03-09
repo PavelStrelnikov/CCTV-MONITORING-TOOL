@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import AppBar from '@mui/material/AppBar';
 import Box from '@mui/material/Box';
@@ -9,9 +10,12 @@ import ListItemIcon from '@mui/material/ListItemIcon';
 import ListItemText from '@mui/material/ListItemText';
 import Toolbar from '@mui/material/Toolbar';
 import Typography from '@mui/material/Typography';
+import useMediaQuery from '@mui/material/useMediaQuery';
+import { useTheme } from '@mui/material/styles';
 import Brightness4Icon from '@mui/icons-material/Brightness4';
 import Brightness7Icon from '@mui/icons-material/Brightness7';
 import DashboardIcon from '@mui/icons-material/Dashboard';
+import MenuIcon from '@mui/icons-material/Menu';
 import RouterIcon from '@mui/icons-material/Router';
 import HistoryIcon from '@mui/icons-material/History';
 import NotificationsIcon from '@mui/icons-material/Notifications';
@@ -25,6 +29,9 @@ const DRAWER_WIDTH = 240;
 export default function Layout() {
   const { mode, toggleTheme } = useThemeMode();
   const { t } = useTranslation();
+  const muiTheme = useTheme();
+  const isMdUp = useMediaQuery(muiTheme.breakpoints.up('md'));
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   const navItems = [
     { label: t('nav.dashboard'), icon: <DashboardIcon />, to: '/' },
@@ -40,7 +47,13 @@ export default function Layout() {
         position="fixed"
         sx={{ zIndex: (t) => t.zIndex.drawer + 1 }}
       >
-        <Toolbar variant="dense" sx={{ justifyContent: 'flex-end' }}>
+        <Toolbar variant="dense" sx={{ justifyContent: 'space-between' }}>
+          {!isMdUp && (
+            <IconButton color="inherit" edge="start" onClick={() => setMobileOpen(true)}>
+              <MenuIcon />
+            </IconButton>
+          )}
+          <Box sx={{ flex: 1 }} />
           <IconButton onClick={toggleTheme} color="inherit" size="small">
             {mode === 'dark' ? <Brightness7Icon /> : <Brightness4Icon />}
           </IconButton>
@@ -48,7 +61,9 @@ export default function Layout() {
       </AppBar>
 
       <Drawer
-        variant="permanent"
+        variant={isMdUp ? 'permanent' : 'temporary'}
+        open={isMdUp ? true : mobileOpen}
+        onClose={() => setMobileOpen(false)}
         sx={{
           width: DRAWER_WIDTH,
           flexShrink: 0,
@@ -73,6 +88,7 @@ export default function Layout() {
               component={NavLink}
               to={item.to}
               end={item.to === '/'}
+              onClick={() => { if (!isMdUp) setMobileOpen(false); }}
             >
               <ListItemIcon>{item.icon}</ListItemIcon>
               <ListItemText
@@ -88,8 +104,8 @@ export default function Layout() {
         component="main"
         sx={{
           flexGrow: 1,
-          p: 3,
-          width: `calc(100% - ${DRAWER_WIDTH}px)`,
+          p: { xs: 1.5, sm: 2, md: 3 },
+          width: { md: `calc(100% - ${DRAWER_WIDTH}px)` },
           mt: '48px', // dense toolbar height
         }}
       >

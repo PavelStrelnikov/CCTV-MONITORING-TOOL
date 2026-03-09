@@ -114,7 +114,7 @@ export default function EditDevice() {
         </Alert>
       )}
 
-      <Paper sx={{ maxWidth: 520, p: 3 }}>
+      <Paper sx={{ maxWidth: { xs: '100%', sm: 520 }, p: { xs: 2, sm: 3 } }}>
         <form onSubmit={handleSubmit}>
           <Stack spacing={2}>
             <TextField

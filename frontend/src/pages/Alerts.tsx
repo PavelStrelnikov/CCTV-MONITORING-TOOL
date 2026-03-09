@@ -126,14 +126,14 @@ export default function Alerts() {
         </Alert>
       )}
 
-      <Box display="flex" gap={2} mb={2}>
+      <Box display="flex" gap={2} mb={2} flexWrap="wrap">
         <TextField
           select
           size="small"
           label={t('table.status')}
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
-          sx={{ width: 160 }}
+          sx={{ width: { xs: '100%', sm: 160 } }}
         >
           <MenuItem value="all">{t('alerts.statusAll')}</MenuItem>
           <MenuItem value="active">{t('alerts.statusActive')}</MenuItem>
@@ -144,24 +144,28 @@ export default function Alerts() {
           label={t('alerts.searchMessages')}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          sx={{ width: 250 }}
+          sx={{ width: { xs: '100%', sm: 250 } }}
         />
       </Box>
 
-      <DataGrid
-        rows={filtered}
-        columns={columns}
-        loading={loading}
-        density="compact"
-        pageSizeOptions={[25, 50, 100]}
-        initialState={{ pagination: { paginationModel: { pageSize: 25 } } }}
-        disableRowSelectionOnClick
-        autoHeight
-        sx={{
-          ...getDataGridSx(mode),
-          '& .MuiDataGrid-cell': { display: 'flex', alignItems: 'center' },
-        }}
-      />
+      <Box sx={{ width: '100%', overflowX: 'auto' }}>
+        <Box sx={{ minWidth: 700 }}>
+          <DataGrid
+            rows={filtered}
+            columns={columns}
+            loading={loading}
+            density="compact"
+            pageSizeOptions={[25, 50, 100]}
+            initialState={{ pagination: { paginationModel: { pageSize: 25 } } }}
+            disableRowSelectionOnClick
+            autoHeight
+            sx={{
+              ...getDataGridSx(mode),
+              '& .MuiDataGrid-cell': { display: 'flex', alignItems: 'center' },
+            }}
+          />
+        </Box>
+      </Box>
     </Box>
   );
 }
