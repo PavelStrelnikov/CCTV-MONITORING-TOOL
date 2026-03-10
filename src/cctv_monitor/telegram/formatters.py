@@ -60,11 +60,17 @@ def format_poll_result(payload: dict) -> str:
     )
 
 
-def format_devices(devices: list[dict]) -> str:
+def format_devices(devices: list[dict], *, page: int, page_size: int) -> str:
     if not devices:
         return "<b>DEVICES</b>\nNo devices found."
-    lines = ["<b>DEVICES</b>"]
-    for i, d in enumerate(devices, start=1):
+    total = len(devices)
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    page = max(0, min(page, total_pages - 1))
+    start = page * page_size
+    end = min(start + page_size, total)
+
+    lines = [f"<b>DEVICES</b>  (page {page + 1}/{total_pages})"]
+    for i, d in enumerate(devices[start:end], start=start + 1):
         name = escape(str(d.get("name", "Unknown")))
         device_id = escape(str(d.get("device_id", "unknown")))
         lines.append(f"{i}. <b>{name}</b>\n   id: <code>{device_id}</code>")

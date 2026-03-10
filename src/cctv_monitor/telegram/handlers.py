@@ -35,6 +35,7 @@ def build_router(api_client: TelegramApiClient) -> Router:
     router = Router(name="telegram_commands")
     device_cache_by_chat: dict[int, list[dict]] = {}
     channels_cache_by_chat: dict[int, dict[int, list[dict]]] = {}
+    DEVICES_PAGE_SIZE = 12
     CHANNELS_PAGE_SIZE = 8
 
     def _main_menu() -> ReplyKeyboardMarkup:
@@ -46,13 +47,34 @@ def build_router(api_client: TelegramApiClient) -> Router:
             resize_keyboard=True,
         )
 
-    def _devices_keyboard(devices: list[dict]) -> InlineKeyboardMarkup:
+    def _devices_keyboard(devices: list[dict], page: int) -> InlineKeyboardMarkup:
+        total = len(devices)
+        total_pages = max(1, (total + DEVICES_PAGE_SIZE - 1) // DEVICES_PAGE_SIZE)
+        page = max(0, min(page, total_pages - 1))
+        start = page * DEVICES_PAGE_SIZE
+        end = min(start + DEVICES_PAGE_SIZE, total)
+
         rows: list[list[InlineKeyboardButton]] = []
-        for i, d in enumerate(devices[:20], start=1):
+        current_row: list[InlineKeyboardButton] = []
+        for i, d in enumerate(devices[start:end], start=start + 1):
             name = d.get("name", "Unknown")
-            rows.append(
-                [InlineKeyboardButton(text=f"{i}. {name}", callback_data=f"devsel:{i - 1}")]
+            current_row.append(
+                InlineKeyboardButton(text=f"{i}. {name}", callback_data=f"devsel:{i - 1}")
             )
+            if len(current_row) == 2:
+                rows.append(current_row)
+                current_row = []
+        if current_row:
+            rows.append(current_row)
+
+        nav: list[InlineKeyboardButton] = []
+        if page > 0:
+            nav.append(InlineKeyboardButton(text="Prev", callback_data=f"devpage:{page - 1}"))
+        if page < total_pages - 1:
+            nav.append(InlineKeyboardButton(text="Next", callback_data=f"devpage:{page + 1}"))
+        if nav:
+            rows.append(nav)
+        rows.append([InlineKeyboardButton(text="Exit", callback_data="home")])
         return InlineKeyboardMarkup(inline_keyboard=rows)
 
     def _device_actions_keyboard(idx: int) -> InlineKeyboardMarkup:
@@ -69,7 +91,11 @@ def build_router(api_client: TelegramApiClient) -> Router:
                 [
                     InlineKeyboardButton(text="Disks", callback_data=f"devdisks:{idx}"),
                     InlineKeyboardButton(text="Channels", callback_data=f"devchannels:{idx}"),
-                ]
+                ],
+                [
+                    InlineKeyboardButton(text="Back", callback_data="devlist"),
+                    InlineKeyboardButton(text="Exit", callback_data="home"),
+                ],
             ]
         )
 
@@ -81,12 +107,18 @@ def build_router(api_client: TelegramApiClient) -> Router:
         end = min(start + CHANNELS_PAGE_SIZE, total)
 
         rows: list[list[InlineKeyboardButton]] = []
+        current_row: list[InlineKeyboardButton] = []
         for i, ch in enumerate(channels[start:end], start=start + 1):
             ch_id = str(ch.get("channel_id", i))
             ch_name = ch.get("channel_name", f"CH {ch_id}")
-            rows.append(
-                [InlineKeyboardButton(text=f"{i}. {ch_name}", callback_data=f"chsnap:{idx}:{ch_id}")]
+            current_row.append(
+                InlineKeyboardButton(text=f"{i}. {ch_name}", callback_data=f"chsnap:{idx}:{ch_id}")
             )
+            if len(current_row) == 2:
+                rows.append(current_row)
+                current_row = []
+        if current_row:
+            rows.append(current_row)
         nav: list[InlineKeyboardButton] = []
         if page > 0:
             nav.append(InlineKeyboardButton(text="Prev", callback_data=f"chpage:{idx}:{page - 1}"))
@@ -94,7 +126,32 @@ def build_router(api_client: TelegramApiClient) -> Router:
             nav.append(InlineKeyboardButton(text="Next", callback_data=f"chpage:{idx}:{page + 1}"))
         if nav:
             rows.append(nav)
+        rows.append(
+            [
+                InlineKeyboardButton(text="Back", callback_data=f"devback:{idx}"),
+                InlineKeyboardButton(text="Exit", callback_data="home"),
+            ]
+        )
         return InlineKeyboardMarkup(inline_keyboard=rows)
+
+    async def _safe_edit_message(message: Message, text: str, reply_markup: InlineKeyboardMarkup | None = None) -> None:
+        try:
+            await message.edit_text(text, parse_mode="HTML", reply_markup=reply_markup)
+        except TelegramBadRequest:
+            await message.answer(text, parse_mode="HTML", reply_markup=reply_markup)
+
+    async def _show_devices_page(message: Message, chat_id: int, page: int) -> None:
+        devices = device_cache_by_chat.get(chat_id, [])
+        if not devices:
+            await _safe_edit_message(message, "<b>DEVICES</b>\nNo devices found.", reply_markup=None)
+            return
+        total_pages = max(1, (len(devices) + DEVICES_PAGE_SIZE - 1) // DEVICES_PAGE_SIZE)
+        page = max(0, min(page, total_pages - 1))
+        await _safe_edit_message(
+            message,
+            format_devices(devices, page=page, page_size=DEVICES_PAGE_SIZE),
+            reply_markup=_devices_keyboard(devices, page),
+        )
 
     async def _show_channels_page(callback: CallbackQuery, idx: int, page: int) -> None:
         if callback.message is None:
@@ -105,12 +162,9 @@ def build_router(api_client: TelegramApiClient) -> Router:
         if not channels:
             await callback.message.answer("Channel list expired. Open Channels again.")
             return
-        await callback.message.answer(
+        await _safe_edit_message(
+            callback.message,
             format_channels(channels, page=page, page_size=CHANNELS_PAGE_SIZE),
-            parse_mode="HTML",
-        )
-        await callback.message.answer(
-            "Select channel for snapshot:",
             reply_markup=_channels_keyboard(idx, channels, page),
         )
 
@@ -248,12 +302,14 @@ def build_router(api_client: TelegramApiClient) -> Router:
             payload = await api_client.list_devices(search=search, limit=30)
             if message.chat:
                 device_cache_by_chat[message.chat.id] = payload
-            await message.answer(format_devices(payload), parse_mode="HTML")
-            if payload:
-                await message.answer(
-                    "Select a device:",
-                    reply_markup=_devices_keyboard(payload),
-                )
+            if not payload:
+                await message.answer("<b>DEVICES</b>\nNo devices found.", parse_mode="HTML")
+                return
+            await message.answer(
+                format_devices(payload, page=0, page_size=DEVICES_PAGE_SIZE),
+                parse_mode="HTML",
+                reply_markup=_devices_keyboard(payload, page=0),
+            )
         except httpx.HTTPError:
             await message.answer("Failed to fetch devices list.")
 
@@ -298,8 +354,70 @@ def build_router(api_client: TelegramApiClient) -> Router:
         device = items[idx]
         name = device.get("name", "Unknown")
         device_id = device.get("device_id", "unknown")
-        await callback.message.answer(
-            f"Selected: {name} ({device_id})",
+        await _safe_edit_message(
+            callback.message,
+            f"<b>SELECTED DEVICE</b>\n{name}\nID: <code>{device_id}</code>",
+            reply_markup=_device_actions_keyboard(idx),
+        )
+        await _safe_callback_answer(callback)
+
+    @router.callback_query(F.data.startswith("devpage:"))
+    async def handle_devices_page_callback(callback: CallbackQuery) -> None:
+        if callback.message is None or callback.from_user is None:
+            return
+        try:
+            page = int((callback.data or "").split(":", 1)[1])
+        except (ValueError, IndexError):
+            await _safe_callback_answer(callback, "Invalid action", show_alert=True)
+            return
+        allowed, _ = await get_access(api_client, callback.from_user.id)
+        if not allowed:
+            await _log_callback(callback, "devpage", "denied")
+            await _safe_callback_answer(callback, "Access denied", show_alert=True)
+            return
+        await _log_callback(callback, "devpage", "ok")
+        await _show_devices_page(callback.message, callback.message.chat.id, page)
+        await _safe_callback_answer(callback)
+
+    @router.callback_query(F.data == "devlist")
+    async def handle_devices_back_to_list(callback: CallbackQuery) -> None:
+        if callback.message is None or callback.from_user is None:
+            return
+        allowed, _ = await get_access(api_client, callback.from_user.id)
+        if not allowed:
+            await _log_callback(callback, "devlist", "denied")
+            await _safe_callback_answer(callback, "Access denied", show_alert=True)
+            return
+        await _log_callback(callback, "devlist", "ok")
+        await _show_devices_page(callback.message, callback.message.chat.id, 0)
+        await _safe_callback_answer(callback)
+
+    @router.callback_query(F.data == "home")
+    async def handle_home_callback(callback: CallbackQuery) -> None:
+        if callback.message is None:
+            return
+        await callback.message.answer("Main menu", reply_markup=_main_menu())
+        await _safe_callback_answer(callback)
+
+    @router.callback_query(F.data.startswith("devback:"))
+    async def handle_device_back_callback(callback: CallbackQuery) -> None:
+        if callback.message is None or callback.from_user is None:
+            return
+        try:
+            idx = int((callback.data or "").split(":", 1)[1])
+        except (ValueError, IndexError):
+            await _safe_callback_answer(callback, "Invalid action", show_alert=True)
+            return
+        items = device_cache_by_chat.get(callback.message.chat.id, [])
+        if idx < 0 or idx >= len(items):
+            await _safe_callback_answer(callback, "Device list expired. Run /devices again.", show_alert=True)
+            return
+        device = items[idx]
+        name = device.get("name", "Unknown")
+        device_id = device.get("device_id", "unknown")
+        await _safe_edit_message(
+            callback.message,
+            f"<b>SELECTED DEVICE</b>\n{name}\nID: <code>{device_id}</code>",
             reply_markup=_device_actions_keyboard(idx),
         )
         await _safe_callback_answer(callback)
@@ -333,7 +451,11 @@ def build_router(api_client: TelegramApiClient) -> Router:
 
         try:
             payload = await api_client.get_device(device_id)
-            await callback.message.answer(format_device_detail(payload), parse_mode="HTML")
+            await _safe_edit_message(
+                callback.message,
+                format_device_detail(payload),
+                reply_markup=_device_actions_keyboard(idx),
+            )
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code == 404:
                 await callback.message.answer(f"Device '{device_id}' not found.")
@@ -377,7 +499,11 @@ def build_router(api_client: TelegramApiClient) -> Router:
 
         try:
             payload = await api_client.poll_device(device_id)
-            await callback.message.answer(format_poll_result(payload), parse_mode="HTML")
+            await _safe_edit_message(
+                callback.message,
+                format_poll_result(payload),
+                reply_markup=_device_actions_keyboard(idx),
+            )
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code == 404:
                 await callback.message.answer(f"Device '{device_id}' not found.")
@@ -411,7 +537,11 @@ def build_router(api_client: TelegramApiClient) -> Router:
         device_id = items[idx].get("device_id", "")
         try:
             payload = await api_client.get_device(device_id)
-            await callback.message.answer(format_network_info(payload), parse_mode="HTML")
+            await _safe_edit_message(
+                callback.message,
+                format_network_info(payload),
+                reply_markup=_device_actions_keyboard(idx),
+            )
         except httpx.HTTPError:
             await callback.message.answer("Failed to fetch network details.")
         await _safe_callback_answer(callback)
@@ -445,7 +575,11 @@ def build_router(api_client: TelegramApiClient) -> Router:
         device_id = items[idx].get("device_id", "")
         try:
             payload = await api_client.get_credentials(device_id)
-            await callback.message.answer(format_credentials(payload), parse_mode="HTML")
+            await _safe_edit_message(
+                callback.message,
+                format_credentials(payload),
+                reply_markup=_device_actions_keyboard(idx),
+            )
         except httpx.HTTPError:
             await callback.message.answer("Failed to fetch credentials.")
         await _safe_callback_answer(callback)
@@ -474,7 +608,11 @@ def build_router(api_client: TelegramApiClient) -> Router:
         device_id = items[idx].get("device_id", "")
         try:
             payload = await api_client.get_device(device_id)
-            await callback.message.answer(format_disks(payload), parse_mode="HTML")
+            await _safe_edit_message(
+                callback.message,
+                format_disks(payload),
+                reply_markup=_device_actions_keyboard(idx),
+            )
         except httpx.HTTPError:
             await callback.message.answer("Failed to fetch disk status.")
         await _safe_callback_answer(callback)
@@ -513,7 +651,11 @@ def build_router(api_client: TelegramApiClient) -> Router:
             if channels:
                 await _show_channels_page(callback, idx, page=0)
             else:
-                await callback.message.answer("No channels available (all are ignored or unavailable).")
+                await _safe_edit_message(
+                    callback.message,
+                    "<b>CHANNELS</b>\nNo channels available (all are ignored or unavailable).",
+                    reply_markup=_device_actions_keyboard(idx),
+                )
         except httpx.HTTPError:
             await callback.message.answer("Failed to fetch channels.")
         await _safe_callback_answer(callback)
