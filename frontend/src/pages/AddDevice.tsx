@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import Box from '@mui/material/Box';
@@ -10,15 +10,15 @@ import Paper from '@mui/material/Paper';
 import Stack from '@mui/material/Stack';
 import Alert from '@mui/material/Alert';
 import { api } from '../api/client.ts';
-import type { DeviceCreate } from '../types.ts';
+import type { DeviceCreate, FolderTree } from '../types.ts';
 
 export default function AddDevice() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [form, setForm] = useState<DeviceCreate>({
-    device_id: '',
+  const [folders, setFolders] = useState<FolderTree[]>([]);
+  const [form, setForm] = useState<Omit<DeviceCreate, 'device_id'>>({
     name: '',
     vendor: 'hikvision',
     host: '',
@@ -28,7 +28,12 @@ export default function AddDevice() {
     password: '',
     transport_mode: 'isapi',
     poll_interval_seconds: null,
+    folder_id: null,
   });
+
+  useEffect(() => {
+    api.getFolders().then(setFolders).catch(() => {});
+  }, []);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -68,16 +73,6 @@ export default function AddDevice() {
       <Paper sx={{ maxWidth: { xs: '100%', sm: 520 }, p: { xs: 2, sm: 3 } }}>
         <form onSubmit={handleSubmit}>
           <Stack spacing={2}>
-            <TextField
-              label={t('addDevice.deviceId')}
-              name="device_id"
-              value={form.device_id}
-              onChange={handleChange}
-              placeholder="nvr-building-1"
-              required
-              size="small"
-              fullWidth
-            />
             <TextField
               label={t('addDevice.name')}
               name="name"
@@ -155,6 +150,28 @@ export default function AddDevice() {
               fullWidth
               helperText={t('addDevice.pollIntervalHelp')}
             />
+            <TextField
+              select
+              label={t('folders.folder')}
+              name="folder_id"
+              value={form.folder_id ?? ''}
+              onChange={(e) => {
+                const val = e.target.value;
+                setForm((prev) => ({ ...prev, folder_id: val === '' ? null : Number(val) }));
+              }}
+              size="small"
+              fullWidth
+            >
+              <MenuItem value="">{t('folders.noFolder')}</MenuItem>
+              {folders.map((f) => [
+                <MenuItem key={f.id} value={f.id}>{f.name}</MenuItem>,
+                ...(f.children || []).map((c) => (
+                  <MenuItem key={c.id} value={c.id} sx={{ pl: 4 }}>
+                    {f.name} / {c.name}
+                  </MenuItem>
+                )),
+              ])}
+            </TextField>
             <TextField
               label={t('addDevice.username')}
               name="username"

@@ -12,6 +12,7 @@ import structlog
 
 from cctv_monitor.core.crypto import decrypt_value
 from cctv_monitor.core.types import AlertStatus, DeviceTransport, DeviceVendor
+from cctv_monitor.drivers.hikvision.errors import IsapiAuthError
 from cctv_monitor.drivers.hikvision.transports.isapi import IsapiTransport
 from cctv_monitor.models.alert import AlertEvent
 from cctv_monitor.models.device import DeviceConfig
@@ -53,8 +54,14 @@ async def poll_all_devices(
 
     async with session_factory() as session:
         repo = DeviceRepository(session)
-        devices = await repo.get_active_devices()
         settings_repo = SystemSettingsRepository(session)
+
+        polling_enabled = await settings_repo.get("polling_enabled")
+        if polling_enabled == "false":
+            logger.debug("poll_all.polling_disabled")
+            return
+
+        devices = await repo.get_active_devices()
         default_interval = await settings_repo.get_int("default_poll_interval")
 
     if not devices:
@@ -266,6 +273,11 @@ async def _poll_device_isapi(
         )
         return True
 
+    except IsapiAuthError:
+        logger.error("poll_all.auth_failed", device_id=device.device_id,
+                      msg="Authentication failed — wrong credentials, skipping")
+        await _save_failure(device.device_id, session_factory)
+        return False
     except Exception as exc:
         logger.error("poll_all.device_error", device_id=device.device_id, error=str(exc))
         await _save_failure(device.device_id, session_factory)

@@ -24,6 +24,20 @@ export interface Tag {
   color: string;
 }
 
+export interface Folder {
+  id: number;
+  name: string;
+  parent_id: number | null;
+  sort_order: number;
+  color: string | null;
+  icon: string | null;
+  device_count: number;
+}
+
+export interface FolderTree extends Folder {
+  children: Folder[];
+}
+
 export interface Device {
   device_id: string;
   name: string;
@@ -41,6 +55,8 @@ export interface Device {
   poll_interval_seconds?: number | null;
   tags: Tag[];
   ignored_channels: string[];
+  folder_id: number | null;
+  folder_path: string | null;
 }
 
 export interface CameraChannel {
@@ -95,7 +111,6 @@ export interface HealthLogEntry {
 }
 
 export interface DeviceCreate {
-  device_id: string;
   name: string;
   vendor: string;
   host: string;
@@ -105,6 +120,7 @@ export interface DeviceCreate {
   password: string;
   transport_mode: string;
   poll_interval_seconds: number | null;
+  folder_id: number | null;
 }
 
 export interface DeviceUpdate {
@@ -117,6 +133,7 @@ export interface DeviceUpdate {
   is_active?: boolean;
   transport_mode?: string;
   poll_interval_seconds?: number | null;
+  folder_id?: number | null;
 }
 
 export interface PollResult {
@@ -169,4 +186,5 @@ export interface Overview {
 
 export interface SystemSettings {
   default_poll_interval: number;
+  polling_enabled: boolean;
 }

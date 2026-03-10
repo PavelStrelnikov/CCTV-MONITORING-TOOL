@@ -1,4 +1,4 @@
-import type { Device, DeviceCreate, DeviceUpdate, DeviceDetail, PollResult, Overview, Alert, HealthLogEntry, PollLogEntry, SystemSettings, Tag } from '../types';
+import type { Device, DeviceCreate, DeviceUpdate, DeviceDetail, PollResult, Overview, Alert, HealthLogEntry, PollLogEntry, SystemSettings, Tag, Folder, FolderTree } from '../types';
 
 const BASE = '/api';
 
@@ -99,4 +99,13 @@ export const api = {
   // Snapshot URL (timestamp param for cache-busting on refresh)
   getSnapshotUrl: (deviceId: string, channelId: string) =>
     `${BASE}/devices/${deviceId}/snapshot/${channelId}?t=${Math.floor(Date.now() / 30000)}`,
+
+  // Folders
+  getFolders: () => request<FolderTree[]>('/folders'),
+  createFolder: (data: { name: string; parent_id?: number | null; color?: string | null; icon?: string | null }) =>
+    request<Folder>('/folders', { method: 'POST', body: JSON.stringify(data) }),
+  updateFolder: (folderId: number, data: { name?: string; parent_id?: number | null; sort_order?: number; color?: string | null; icon?: string | null }) =>
+    request<Folder>(`/folders/${folderId}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteFolder: (folderId: number) =>
+    request<void>(`/folders/${folderId}`, { method: 'DELETE' }),
 };

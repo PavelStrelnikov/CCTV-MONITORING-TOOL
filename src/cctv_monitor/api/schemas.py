@@ -1,8 +1,40 @@
 from datetime import datetime
 from pydantic import BaseModel
 
+class FolderCreate(BaseModel):
+    name: str
+    parent_id: int | None = None
+    color: str | None = None
+    icon: str | None = None
+
+class FolderUpdate(BaseModel):
+    name: str | None = None
+    parent_id: int | None = None
+    sort_order: int | None = None
+    color: str | None = None
+    icon: str | None = None
+
+class FolderOut(BaseModel):
+    id: int
+    name: str
+    parent_id: int | None = None
+    sort_order: int = 0
+    color: str | None = None
+    icon: str | None = None
+    device_count: int = 0
+
+class FolderTreeOut(BaseModel):
+    id: int
+    name: str
+    sort_order: int = 0
+    color: str | None = None
+    icon: str | None = None
+    children: list[FolderOut] = []
+    device_count: int = 0
+
+
 class DeviceCreate(BaseModel):
-    device_id: str
+    device_id: str | None = None
     name: str
     vendor: str
     host: str
@@ -12,6 +44,7 @@ class DeviceCreate(BaseModel):
     password: str
     transport_mode: str = "isapi"
     poll_interval_seconds: int | None = None
+    folder_id: int | None = None
 
 class DeviceUpdate(BaseModel):
     name: str | None = None
@@ -23,6 +56,7 @@ class DeviceUpdate(BaseModel):
     is_active: bool | None = None
     transport_mode: str | None = None
     poll_interval_seconds: int | None = None
+    folder_id: int | None = None
 
 
 class HealthSummaryOut(BaseModel):
@@ -54,6 +88,8 @@ class DeviceOut(BaseModel):
     poll_interval_seconds: int | None = None
     tags: list[TagOut] = []
     ignored_channels: list[str] = []
+    folder_id: int | None = None
+    folder_path: str | None = None
 
 class CameraChannelOut(BaseModel):
     channel_id: str

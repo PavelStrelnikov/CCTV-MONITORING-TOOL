@@ -15,7 +15,7 @@ import InputAdornment from '@mui/material/InputAdornment';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import { api } from '../api/client.ts';
-import type { DeviceUpdate } from '../types.ts';
+import type { DeviceUpdate, FolderTree } from '../types.ts';
 
 export default function EditDevice() {
   const { t } = useTranslation();
@@ -25,7 +25,7 @@ export default function EditDevice() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [currentUsername, setCurrentUsername] = useState('');
+  const [folders, setFolders] = useState<FolderTree[]>([]);
   const [form, setForm] = useState({
     name: '',
     host: '',
@@ -35,6 +35,7 @@ export default function EditDevice() {
     password: '',
     transport_mode: 'isapi',
     poll_interval_seconds: null as number | null,
+    folder_id: null as number | null,
   });
 
   useEffect(() => {
@@ -42,18 +43,20 @@ export default function EditDevice() {
     Promise.all([
       api.getDeviceDetail(deviceId),
       api.getCredentials(deviceId).catch(() => null),
+      api.getFolders().catch(() => [] as FolderTree[]),
     ])
-      .then(([detail, creds]) => {
-        setCurrentUsername(creds?.username || '');
+      .then(([detail, creds, foldersData]) => {
+        setFolders(foldersData);
         setForm({
           name: detail.device.name,
           host: detail.device.host,
           web_port: detail.device.web_port,
           sdk_port: detail.device.sdk_port,
-          username: '',
-          password: '',
+          username: creds?.username || '',
+          password: creds?.password || '',
           transport_mode: detail.device.transport_mode || 'isapi',
           poll_interval_seconds: detail.device.poll_interval_seconds ?? null,
+          folder_id: detail.device.folder_id,
         });
       })
       .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load'))
@@ -80,11 +83,12 @@ export default function EditDevice() {
         host: form.host,
         web_port: form.web_port,
         sdk_port: form.sdk_port,
+        username: form.username,
+        password: form.password,
         transport_mode: form.transport_mode,
         poll_interval_seconds: form.poll_interval_seconds,
+        folder_id: form.folder_id,
       };
-      if (form.username) update.username = form.username;
-      if (form.password) update.password = form.password;
       await api.updateDevice(deviceId, update);
       navigate(`/devices/${deviceId}`);
     } catch (err) {
@@ -115,7 +119,7 @@ export default function EditDevice() {
       )}
 
       <Paper sx={{ maxWidth: { xs: '100%', sm: 520 }, p: { xs: 2, sm: 3 } }}>
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit} autoComplete="off">
           <Stack spacing={2}>
             <TextField
               label={t('addDevice.name')}
@@ -180,20 +184,43 @@ export default function EditDevice() {
               helperText={t('addDevice.pollIntervalHelp')}
             />
             <TextField
-              label={currentUsername ? t('editDevice.usernameCurrent', { name: currentUsername }) : t('editDevice.usernameKeep')}
+              select
+              label={t('folders.folder')}
+              name="folder_id"
+              value={form.folder_id ?? ''}
+              onChange={(e) => {
+                const val = e.target.value;
+                setForm((prev) => ({ ...prev, folder_id: val === '' ? null : Number(val) }));
+              }}
+              size="small"
+              fullWidth
+            >
+              <MenuItem value="">{t('folders.noFolder')}</MenuItem>
+              {folders.map((f) => [
+                <MenuItem key={f.id} value={f.id}>{f.name}</MenuItem>,
+                ...(f.children || []).map((c) => (
+                  <MenuItem key={c.id} value={c.id} sx={{ pl: 4 }}>
+                    {f.name} / {c.name}
+                  </MenuItem>
+                )),
+              ])}
+            </TextField>
+            <TextField
+              label={t('addDevice.username')}
               name="username"
               value={form.username}
               onChange={handleChange}
+              autoComplete="off"
               size="small"
               fullWidth
-              placeholder={currentUsername || undefined}
             />
             <TextField
-              label={t('editDevice.passwordKeep')}
+              label={t('addDevice.password')}
               name="password"
               type={showPassword ? 'text' : 'password'}
               value={form.password}
               onChange={handleChange}
+              autoComplete="new-password"
               size="small"
               fullWidth
               slotProps={{

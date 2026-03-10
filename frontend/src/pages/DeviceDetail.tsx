@@ -54,16 +54,18 @@ function TabPanel(props: { children: React.ReactNode; value: number; index: numb
 }
 
 // ---------- Camera card ----------
-function CameraCard({ cam, ignored, onToggleIgnore, snapshotUrl, t }: {
+function CameraCard({ cam, ignored, onToggleIgnore, snapshotUrl, t, lazySnapshot = false }: {
   cam: CameraChannel;
   ignored: boolean;
   onToggleIgnore: (channelId: string) => void;
   snapshotUrl: string;
   t: (key: string) => string;
+  lazySnapshot?: boolean;
 }) {
   const [hovered, setHovered] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [imgError, setImgError] = useState(false);
+  const [snapshotEnabled, setSnapshotEnabled] = useState(!lazySnapshot);
 
   const borderColor = ignored
     ? '#475569'
@@ -103,11 +105,16 @@ function CameraCard({ cam, ignored, onToggleIgnore, snapshotUrl, t }: {
           overflow: 'hidden',
         }}
         onClick={() => {
-          if (isOnline && !imgError) setFullscreen(true);
+          if (!isOnline || imgError || ignored) return;
+          if (lazySnapshot && !snapshotEnabled) {
+            setSnapshotEnabled(true);
+            return;
+          }
+          setFullscreen(true);
         }}
       >
         {/* Snapshot thumbnail — hidden entirely if image fails to load */}
-        {isOnline && !ignored && !imgError && (
+        {isOnline && !ignored && !imgError && snapshotEnabled && (
           <Box
             sx={{
               position: 'relative',
@@ -130,6 +137,30 @@ function CameraCard({ cam, ignored, onToggleIgnore, snapshotUrl, t }: {
                 display: 'block',
               }}
             />
+          </Box>
+        )}
+        {isOnline && !ignored && !imgError && !snapshotEnabled && (
+          <Box
+            sx={{
+              position: 'relative',
+              width: '100%',
+              height: 80,
+              bgcolor: '#0F172A',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Button
+              size="small"
+              variant="outlined"
+              onClick={(e) => {
+                e.stopPropagation();
+                setSnapshotEnabled(true);
+              }}
+            >
+              Load snapshot
+            </Button>
           </Box>
         )}
 
@@ -391,6 +422,9 @@ export default function DeviceDetail() {
 
   const { device, cameras, disks, alerts } = detail;
   const health = detail.health ?? device.last_health;
+  const isLegacySnapshotModel =
+    device.vendor === 'hikvision' &&
+    (device.model || '').toUpperCase().includes('DS-7616NI-E2/A');
 
   const statusLabel = health ? (health.reachable ? t('status.online').toUpperCase() : t('status.offline').toUpperCase()) : t('status.unknown');
   const statusColor: 'success' | 'error' | 'default' = health
@@ -672,17 +706,32 @@ export default function DeviceDetail() {
         {cameras.length === 0 ? (
           <Typography color="text.secondary">{t('deviceDetail.noCameras')}</Typography>
         ) : (
-          <Box
-            sx={{
-              display: 'grid',
-              gridTemplateColumns: { xs: 'repeat(auto-fill, minmax(160px, 1fr))', sm: 'repeat(auto-fill, minmax(220px, 1fr))' },
-              gap: 2,
-            }}
-          >
-            {cameras.map((c) => (
-              <CameraCard key={c.channel_id} cam={c} ignored={ignoredChannels.has(c.channel_id)} onToggleIgnore={handleToggleIgnore} snapshotUrl={api.getSnapshotUrl(deviceId!, c.channel_id)} t={t} />
-            ))}
-          </Box>
+          <>
+            {isLegacySnapshotModel && (
+              <Alert severity="info" sx={{ mb: 2 }}>
+                Snapshot loading is on-demand for this legacy NVR model.
+              </Alert>
+            )}
+            <Box
+              sx={{
+                display: 'grid',
+                gridTemplateColumns: { xs: 'repeat(auto-fill, minmax(160px, 1fr))', sm: 'repeat(auto-fill, minmax(220px, 1fr))' },
+                gap: 2,
+              }}
+            >
+              {cameras.map((c) => (
+                <CameraCard
+                  key={c.channel_id}
+                  cam={c}
+                  ignored={ignoredChannels.has(c.channel_id)}
+                  onToggleIgnore={handleToggleIgnore}
+                  snapshotUrl={api.getSnapshotUrl(deviceId!, c.channel_id)}
+                  t={t}
+                  lazySnapshot={isLegacySnapshotModel}
+                />
+              ))}
+            </Box>
+          </>
         )}
       </TabPanel>
 

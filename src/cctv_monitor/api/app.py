@@ -20,6 +20,7 @@ def create_app() -> FastAPI:
     from cctv_monitor.api.routes.alerts_routes import router as alerts_router
     from cctv_monitor.api.routes.settings import router as settings_router
     from cctv_monitor.api.routes.telegram import router as telegram_router
+    from cctv_monitor.api.routes.folders import router as folders_router
 
     app.include_router(devices_router, prefix="/api")
     app.include_router(status_router, prefix="/api")
@@ -28,6 +29,7 @@ def create_app() -> FastAPI:
     app.include_router(alerts_router, prefix="/api")
     app.include_router(settings_router, prefix="/api")
     app.include_router(telegram_router, prefix="/api")
+    app.include_router(folders_router, prefix="/api")
 
     @app.get("/health")
     async def health():

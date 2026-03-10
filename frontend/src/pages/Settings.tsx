@@ -6,6 +6,8 @@ import MenuItem from '@mui/material/MenuItem';
 import Button from '@mui/material/Button';
 import Alert from '@mui/material/Alert';
 import Paper from '@mui/material/Paper';
+import Switch from '@mui/material/Switch';
+import FormControlLabel from '@mui/material/FormControlLabel';
 import SaveIcon from '@mui/icons-material/Save';
 import { useTranslation } from 'react-i18next';
 import { api } from '../api/client.ts';
@@ -23,6 +25,7 @@ const INTERVAL_OPTIONS = [
 export default function Settings() {
   const { t, i18n } = useTranslation();
   const [interval, setInterval] = useState(900);
+  const [pollingEnabled, setPollingEnabled] = useState(true);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -35,7 +38,10 @@ export default function Settings() {
 
   useEffect(() => {
     api.getSettings()
-      .then((s) => setInterval(s.default_poll_interval))
+      .then((s) => {
+        setInterval(s.default_poll_interval);
+        setPollingEnabled(s.polling_enabled);
+      })
       .catch((err) => setError(err instanceof Error ? err.message : t('settings.failedLoad')))
       .finally(() => setLoading(false));
   }, []);
@@ -45,8 +51,9 @@ export default function Settings() {
     setError('');
     setSuccess('');
     try {
-      const updated = await api.updateSettings({ default_poll_interval: interval });
+      const updated = await api.updateSettings({ default_poll_interval: interval, polling_enabled: pollingEnabled });
       setInterval(updated.default_poll_interval);
+      setPollingEnabled(updated.polling_enabled);
       setSuccess(t('settings.saved'));
     } catch (err) {
       setError(err instanceof Error ? err.message : t('settings.failedSave'));
@@ -81,6 +88,18 @@ export default function Settings() {
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
           {t('settings.pollingDesc')}
         </Typography>
+
+        <FormControlLabel
+          control={
+            <Switch
+              checked={pollingEnabled}
+              onChange={(e) => setPollingEnabled(e.target.checked)}
+              color={pollingEnabled ? 'success' : 'default'}
+            />
+          }
+          label={pollingEnabled ? t('settings.pollingOn') : t('settings.pollingOff')}
+          sx={{ mb: 2 }}
+        />
 
         <TextField
           select

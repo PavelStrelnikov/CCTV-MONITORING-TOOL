@@ -40,10 +40,18 @@ class TelegramApiClient:
                 return payload[:limit]
             return []
 
-    async def list_devices(self, *, search: str | None = None, limit: int = 30) -> list[dict]:
+    async def list_devices(
+        self,
+        *,
+        search: str | None = None,
+        folder_id: int | None = None,
+        limit: int = 30,
+    ) -> list[dict]:
         params: dict[str, str | int] = {}
         if search:
             params["search"] = search
+        if folder_id is not None:
+            params["folder_id"] = folder_id
         async with httpx.AsyncClient(timeout=15.0) as client:
             response = await client.get(
                 f"{self._base_url}/api/devices",
@@ -54,6 +62,18 @@ class TelegramApiClient:
             payload = response.json()
             if isinstance(payload, list):
                 return payload[:limit]
+            return []
+
+    async def list_folders(self) -> list[dict]:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.get(
+                f"{self._base_url}/api/folders",
+                headers=self._headers(),
+            )
+            response.raise_for_status()
+            payload = response.json()
+            if isinstance(payload, list):
+                return payload
             return []
 
     async def get_device(self, device_id: str) -> dict:

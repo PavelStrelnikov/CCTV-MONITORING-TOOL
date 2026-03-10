@@ -2,6 +2,7 @@ import asyncio
 import io
 import logging
 import socket
+import uuid
 
 logger = logging.getLogger(__name__)
 
@@ -19,11 +20,12 @@ from cctv_monitor.api.schemas import (
 from cctv_monitor.core.config import Settings
 from cctv_monitor.core.crypto import encrypt_value, decrypt_value
 from cctv_monitor.core.types import DeviceTransport, DeviceVendor
+from cctv_monitor.drivers.hikvision.errors import IsapiAuthError, IsapiError, SdkError
 from cctv_monitor.drivers.hikvision.transports.isapi import IsapiTransport
 from cctv_monitor.drivers.registry import DriverRegistry
 from cctv_monitor.core.http_client import HttpClientManager
 from cctv_monitor.models.device import DeviceConfig
-from cctv_monitor.storage.repositories import DeviceRepository, AlertRepository, DeviceTagRepository, DeviceHealthLogRepository
+from cctv_monitor.storage.repositories import DeviceRepository, AlertRepository, DeviceTagRepository, DeviceHealthLogRepository, FolderRepository
 from cctv_monitor.storage.tables import AlertTable, DeviceTable
 
 router = APIRouter(tags=["devices"])
@@ -42,7 +44,7 @@ async def _check_tcp_port(host: str, port: int, timeout: float = 3.0) -> bool:
         return False
 
 
-def _device_out(d: DeviceTable, tags: list[dict] | None = None) -> DeviceOut:
+def _device_out(d: DeviceTable, tags: list[dict] | None = None, folder_path: str | None = None) -> DeviceOut:
     cached = d.last_health_json or {}
     health_data = cached.get("health")
     health = HealthSummaryOut(**health_data) if health_data else None
@@ -56,28 +58,50 @@ def _device_out(d: DeviceTable, tags: list[dict] | None = None) -> DeviceOut:
         poll_interval_seconds=d.poll_interval_seconds,
         tags=tags or [],
         ignored_channels=d.ignored_channels or [],
+        folder_id=d.folder_id,
+        folder_path=folder_path,
     )
+
+
+async def _build_folder_paths(session: AsyncSession) -> dict[int, str]:
+    """Build a map of folder_id -> display path (e.g. 'Company / Branch')."""
+    folder_repo = FolderRepository(session)
+    folders = await folder_repo.list_all()
+    folder_map = {f.id: f for f in folders}
+    paths: dict[int, str] = {}
+    for f in folders:
+        if f.parent_id is None:
+            paths[f.id] = f.name
+        else:
+            parent = folder_map.get(f.parent_id)
+            paths[f.id] = f"{parent.name} / {f.name}" if parent else f.name
+    return paths
 
 
 @router.get("/devices", response_model=list[DeviceOut])
 async def list_devices(
     tag: str | None = None,
     search: str | None = None,
+    folder_id: int | None = None,
     session: AsyncSession = Depends(get_session),
 ):
     repo = DeviceRepository(session)
     devices = await repo.list_all()
     tag_repo = DeviceTagRepository(session)
+    folder_paths = await _build_folder_paths(session)
 
     result = []
     for d in devices:
+        if folder_id is not None and d.folder_id != folder_id:
+            continue
         tags = await tag_repo.get_tags_with_colors(d.device_id)
         tag_names = [t["name"] for t in tags]
         if tag and tag not in tag_names:
             continue
         if search and search.lower() not in d.name.lower() and search not in d.host:
             continue
-        result.append(_device_out(d, tags))
+        path = folder_paths.get(d.folder_id) if d.folder_id else None
+        result.append(_device_out(d, tags, folder_path=path))
     return result
 
 
@@ -87,13 +111,15 @@ async def create_device(
     session: AsyncSession = Depends(get_session),
     settings: Settings = Depends(get_settings),
 ):
+    device_id = body.device_id or f"dvr-{uuid.uuid4().hex[:8]}"
     encrypted_password = encrypt_value(body.password, settings.ENCRYPTION_KEY)
     device = DeviceTable(
-        device_id=body.device_id, name=body.name, vendor=body.vendor,
+        device_id=device_id, name=body.name, vendor=body.vendor,
         host=body.host, web_port=body.web_port, sdk_port=body.sdk_port,
         username=body.username, password_encrypted=encrypted_password,
         transport_mode=body.transport_mode, is_active=True,
         poll_interval_seconds=body.poll_interval_seconds,
+        folder_id=body.folder_id,
     )
     repo = DeviceRepository(session)
     try:
@@ -245,11 +271,27 @@ async def poll_device(
 
     # 1) Try ISAPI if web port is open
     if device.web_port and web_port_open:
-        return await _poll_via_isapi(
-            device, password, device_id, repo, session,
-            registry, http_client,
-            web_port_open=web_port_open, sdk_port_open=sdk_port_open,
-        )
+        try:
+            return await _poll_via_isapi(
+                device, password, device_id, repo, session,
+                registry, http_client,
+                web_port_open=web_port_open, sdk_port_open=sdk_port_open,
+            )
+        except IsapiAuthError:
+            # Auth failed — do NOT try SDK with same bad credentials
+            logger.warning("poll.auth_failed device_id=%s — skipping SDK fallback", device_id)
+            from datetime import datetime, timezone as tz
+            now = datetime.now(tz.utc)
+            health = HealthSummaryOut(
+                reachable=False, camera_count=0, online_cameras=0,
+                offline_cameras=0, disk_ok=False, response_time_ms=0,
+                checked_at=now,
+                web_port_open=web_port_open, sdk_port_open=sdk_port_open,
+            )
+            raise HTTPException(
+                status_code=502,
+                detail="Authentication failed — wrong username or password. SDK fallback skipped to avoid device lockout.",
+            )
 
     # 2) Try SDK subprocess if sdk_port is configured (regardless of TCP check result)
     if device.sdk_port and settings.HCNETSDK_LIB_PATH:
@@ -431,6 +473,9 @@ async def _poll_via_isapi(
         )
         await session.commit()
 
+    except IsapiAuthError:
+        # Re-raise auth errors so callers can avoid SDK fallback
+        raise
     except Exception:
         now_err = datetime.now(timezone.utc)
         health = HealthSummaryOut(
@@ -620,6 +665,8 @@ async def poll_device_stream(
         web_port_open = None
         sdk_port_open = None
         transport_used = None
+        connect_error = ""  # diagnostic message for connection failure
+        auth_failed = False  # set to True on auth error to prevent SDK fallback
 
         # Step 1: Check web port
         if device.web_port:
@@ -638,6 +685,69 @@ async def poll_device_stream(
                         f"Port {device.sdk_port} {'open' if sdk_port_open else 'closed'}")
         else:
             yield _sse("sdk_port", "skipped", "Not configured")
+
+        # --- Early exit: both ports unreachable ---
+        both_ports_closed = (
+            (device.web_port and web_port_open is False)
+            and (device.sdk_port and sdk_port_open is False)
+        )
+        only_web_closed = (
+            device.web_port and web_port_open is False
+            and not device.sdk_port
+        )
+        only_sdk_closed = (
+            device.sdk_port and sdk_port_open is False
+            and not device.web_port
+        )
+        no_ports = not device.web_port and not device.sdk_port
+
+        if both_ports_closed:
+            connect_error = (
+                f"Device unreachable — both ports closed: "
+                f"web {device.host}:{device.web_port}, SDK {device.host}:{device.sdk_port}. "
+                f"Check: IP address, network/internet, device power"
+            )
+        elif only_web_closed:
+            connect_error = (
+                f"Web port {device.host}:{device.web_port} closed. "
+                f"Check: IP address, port number, network, device power"
+            )
+        elif only_sdk_closed:
+            connect_error = (
+                f"SDK port {device.host}:{device.sdk_port} closed. "
+                f"Check: IP address, port number, network, device power"
+            )
+        elif no_ports:
+            connect_error = "No ports configured — set web port or SDK port in device settings"
+
+        if connect_error:
+            yield _sse("connect", "error", connect_error)
+            for skip_step in ("device_info", "cameras", "disks", "recording", "time_check"):
+                yield _sse(skip_step, "skipped", "")
+            yield _sse("done", "error", connect_error)
+            # Save failure
+            now = datetime.now(timezone.utc)
+            health_json = {
+                "reachable": False, "camera_count": 0,
+                "online_cameras": 0, "offline_cameras": 0,
+                "disk_ok": False, "response_time_ms": 0,
+                "checked_at": now.isoformat(),
+                "web_port_open": web_port_open, "sdk_port_open": sdk_port_open,
+            }
+            try:
+                await repo.update(device_id, last_poll_at=now, last_health_json={
+                    "cameras": [], "disks": [], "health": health_json,
+                })
+                health_log_repo = DeviceHealthLogRepository(session)
+                await health_log_repo.insert(
+                    device_id=device_id, reachable=False,
+                    camera_count=0, online_cameras=0,
+                    offline_cameras=0, disk_ok=False, response_time_ms=0,
+                )
+                await session.commit()
+            except Exception:
+                pass
+            return
 
         # Step 3: Connect — choose transport
         driver = None
@@ -661,11 +771,27 @@ async def poll_device_stream(
                 await driver.connect(config, port=device.web_port)
                 connected = True
                 yield _sse("connect", "success", "ISAPI connected")
+            except IsapiAuthError:
+                auth_failed = True
+                connect_error = (
+                    f"Authentication failed — wrong username or password "
+                    f"(ISAPI {device.host}:{device.web_port}). "
+                    f"SDK fallback skipped to prevent device lockout."
+                )
+                yield _sse("connect", "error", connect_error)
+                driver = None
             except Exception as exc:
-                yield _sse("connect", "error", f"ISAPI failed: {exc}")
+                exc_msg = str(exc)
+                if "ConnectTimeout" in exc_msg or "timed out" in exc_msg.lower():
+                    connect_error = f"Connection timeout — {device.host}:{device.web_port} not responding"
+                elif "ConnectError" in exc_msg or "ConnectionRefused" in exc_msg:
+                    connect_error = f"Connection refused — {device.host}:{device.web_port}"
+                else:
+                    connect_error = f"ISAPI connection failed: {exc_msg}"
+                yield _sse("connect", "error", connect_error)
                 driver = None
 
-        if not connected and device.sdk_port:
+        if not connected and not auth_failed and device.sdk_port and sdk_port_open:
             transport_used = "sdk"
             yield _sse("connect", "running", f"Connecting via SDK ({device.host}:{device.sdk_port})...")
             # SDK uses subprocess — we'll handle it below
@@ -673,8 +799,12 @@ async def poll_device_stream(
             connected = True
 
         if not connected:
-            yield _sse("connect", "error", "No transport available")
-            yield _sse("done", "error", "Poll failed — no connection")
+            # Auth error or all transports failed
+            if not connect_error:
+                connect_error = "No transport available — all connection attempts failed"
+            for skip_step in ("device_info", "cameras", "disks", "recording", "time_check"):
+                yield _sse(skip_step, "skipped", "")
+            yield _sse("done", "error", connect_error)
             # Save failure
             now = datetime.now(timezone.utc)
             health_json = {
@@ -860,10 +990,29 @@ async def poll_device_stream(
             )
 
             if not result["success"]:
-                err_msg = result.get("error", "SDK failed")
+                raw_err = result.get("error", "SDK failed")
+                # Parse SDK error codes for user-friendly messages
+                if "error 1:" in raw_err.lower() or "error_code=1" in raw_err:
+                    err_msg = (
+                        f"Authentication failed — wrong username or password "
+                        f"(SDK {device.host}:{device.sdk_port})"
+                    )
+                elif "error 3:" in raw_err.lower():
+                    err_msg = f"SDK initialization error — {raw_err}"
+                elif "error 7:" in raw_err.lower():
+                    err_msg = (
+                        f"Network error connecting to {device.host}:{device.sdk_port} — "
+                        f"check IP address and port"
+                    )
+                elif "not reachable" in raw_err.lower():
+                    err_msg = f"SDK port {device.host}:{device.sdk_port} is not reachable"
+                elif "timeout" in raw_err.lower():
+                    err_msg = f"SDK connection timeout — {device.host}:{device.sdk_port} not responding"
+                else:
+                    err_msg = f"SDK connection failed: {raw_err}"
                 yield _sse("device_info", "error", err_msg)
-                yield _sse("cameras", "skipped", "")
-                yield _sse("disks", "skipped", "")
+                for skip_step in ("cameras", "disks", "recording", "time_check"):
+                    yield _sse(skip_step, "skipped", "")
 
                 # Save failure
                 now = datetime.now(timezone.utc)
@@ -1008,13 +1157,31 @@ async def poll_device_stream(
 
 # Limit concurrent snapshot requests per device to avoid overwhelming NVRs
 _snapshot_semaphores: dict[str, asyncio.Semaphore] = {}
-_SNAPSHOT_CONCURRENCY = 4  # max parallel snapshot fetches per device
+_SNAPSHOT_CONCURRENCY = 1  # keep old NVRs stable under snapshot storms
 
 
 def _get_snapshot_semaphore(device_id: str) -> asyncio.Semaphore:
     if device_id not in _snapshot_semaphores:
         _snapshot_semaphores[device_id] = asyncio.Semaphore(_SNAPSHOT_CONCURRENCY)
     return _snapshot_semaphores[device_id]
+
+
+# SDK batch snapshot cache: one subprocess captures all channels, results cached briefly
+import time as _time
+
+_sdk_batch_cache: dict[str, tuple[float, dict[str, bytes], dict[str, str]]] = {}
+_sdk_batch_locks: dict[str, asyncio.Lock] = {}
+_SDK_BATCH_TTL = 25  # seconds — slightly less than frontend refresh interval (30s)
+_sdk_batch_disabled_until: dict[str, float] = {}
+_sdk_batch_timeout_streak: dict[str, int] = {}
+_SDK_BATCH_TIMEOUT_STREAK_LIMIT = 2
+_SDK_BATCH_DISABLE_SECONDS = 300
+
+
+def _get_sdk_batch_lock(device_id: str) -> asyncio.Lock:
+    if device_id not in _sdk_batch_locks:
+        _sdk_batch_locks[device_id] = asyncio.Lock()
+    return _sdk_batch_locks[device_id]
 
 
 @router.get("/devices/{device_id}/snapshot/{channel_id}")
@@ -1031,8 +1198,13 @@ async def get_snapshot(
         raise HTTPException(status_code=404, detail="Device not found")
 
     password = decrypt_value(device.password_encrypted, settings.ENCRYPTION_KEY)
-    sdk_available = device.sdk_port and settings.HCNETSDK_LIB_PATH is not None
+    sdk_available = bool(device.sdk_port and settings.HCNETSDK_LIB_PATH)
     prefer_sdk = device.transport_mode == DeviceTransport.SDK
+    if not sdk_available:
+        logger.info(
+            "snapshot: SDK not available for device=%s (sdk_port=%s, lib_path=%s)",
+            device_id, device.sdk_port, bool(settings.HCNETSDK_LIB_PATH),
+        )
 
     semaphore = _get_snapshot_semaphore(device_id)
     try:
@@ -1040,55 +1212,41 @@ async def get_snapshot(
             image_data = None
             errors: list[str] = []
 
-            # Build attempt order based on transport_mode (try both, preferred first)
-            attempts: list[str] = []
-            if prefer_sdk:
-                if sdk_available:
-                    attempts.append("sdk")
-                if device.web_port:
-                    attempts.append("isapi")
-            else:
-                if device.web_port:
-                    attempts.append("isapi")
-                if sdk_available:
-                    attempts.append("sdk")
-
-            for method in attempts:
-                if image_data is not None:
-                    break
-
-                if method == "sdk":
+            # Try ISAPI first (unless SDK-preferred)
+            if not prefer_sdk and device.web_port:
+                transport = IsapiTransport(http_client)
+                try:
+                    await transport.connect(device.host, device.web_port, device.username, password)
+                    image_data = await transport.get_snapshot(channel_id)
+                except IsapiAuthError as auth_exc:
+                    errors.append(f"ISAPI: {auth_exc}")
+                    logger.warning("ISAPI snapshot auth failed for device=%s channel=%s", device_id, channel_id)
+                    raise HTTPException(status_code=502, detail=f"Auth failed: {auth_exc}")
+                except Exception as isapi_exc:
+                    errors.append(f"ISAPI: {isapi_exc}")
+                    logger.warning("ISAPI snapshot failed for device=%s channel=%s: %s", device_id, channel_id, isapi_exc)
+                finally:
                     try:
-                        image_data = await _sdk_snapshot_subprocess(
-                            device.host, device.sdk_port, device.username, password,
-                            int(channel_id), settings.HCNETSDK_LIB_PATH,
-                        )
-                    except Exception as sdk_exc:
-                        errors.append(f"SDK: {sdk_exc}")
-                        logger.warning(
-                            "SDK snapshot failed for device=%s channel=%s: %s",
-                            device_id, channel_id, sdk_exc,
-                        )
+                        await transport.disconnect()
+                    except Exception:
+                        pass
 
-                elif method == "isapi":
-                    transport = IsapiTransport(http_client)
-                    try:
-                        await transport.connect(device.host, device.web_port, device.username, password)
-                        image_data = await transport.get_snapshot(channel_id)
-                    except Exception as isapi_exc:
-                        errors.append(f"ISAPI: {isapi_exc}")
-                        logger.warning(
-                            "ISAPI snapshot failed for device=%s channel=%s: %s",
-                            device_id, channel_id, isapi_exc,
-                        )
-                    finally:
-                        try:
-                            await transport.disconnect()
-                        except Exception:
-                            pass
+            # SDK fallback (or primary if SDK-preferred): use batch cache
+            if image_data is None and sdk_available:
+                image_data = await _get_sdk_snapshot_cached(
+                    device_id, device.host, device.sdk_port,
+                    device.username, password, channel_id, settings.HCNETSDK_LIB_PATH,
+                    health_json=device.last_health_json,
+                )
+                if image_data is None:
+                    sdk_err = _sdk_batch_cache.get(device_id)
+                    if sdk_err:
+                        _, _, ch_errors = sdk_err
+                        err = ch_errors.get(channel_id, "unknown error")
+                        errors.append(f"SDK: {err}")
 
             if image_data is None:
-                if not attempts:
+                if not device.web_port and not sdk_available:
                     raise HTTPException(status_code=400, detail="No port configured for snapshots")
                 raise HTTPException(status_code=502, detail=f"All snapshot methods failed: {'; '.join(errors)}")
     except HTTPException:
@@ -1129,11 +1287,17 @@ async def _sdk_snapshot_subprocess(
     )
 
     try:
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=15)
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=35)
     except asyncio.TimeoutError:
         proc.kill()
         await proc.wait()
         raise Exception("SDK snapshot subprocess timed out")
+
+    # Log subprocess debug output (channel mapping info etc.)
+    if stderr:
+        debug_info = stderr.decode(errors="replace").strip()
+        if debug_info:
+            logger.info("SDK snapshot subprocess ch=%s: %s", channel, debug_info)
 
     if proc.returncode != 0:
         err_msg = stderr.decode(errors="replace").strip() if stderr else ""
@@ -1150,3 +1314,226 @@ async def _sdk_snapshot_subprocess(
         raise Exception("SDK snapshot returned invalid JPEG data")
 
     return stdout
+
+
+async def _sdk_single_snapshot_fallback(
+    *,
+    device_id: str,
+    host: str,
+    port: int,
+    username: str,
+    password: str,
+    channel_id: str,
+    lib_path: str,
+) -> bytes | None:
+    try:
+        ch_int = int(channel_id)
+    except (TypeError, ValueError):
+        return None
+    try:
+        logger.info(
+            "SDK single snapshot fallback for device=%s channel=%s",
+            device_id, channel_id,
+        )
+        return await _sdk_snapshot_subprocess(
+            host, port, username, password, ch_int, lib_path,
+        )
+    except Exception as single_exc:
+        logger.warning(
+            "SDK single snapshot fallback failed for device=%s channel=%s: %s",
+            device_id, channel_id, single_exc,
+        )
+        return None
+
+
+async def _get_sdk_snapshot_cached(
+    device_id: str, host: str, port: int, username: str, password: str,
+    channel_id: str, lib_path: str, health_json: dict | None = None,
+) -> bytes | None:
+    """Get SDK snapshot from batch cache, triggering batch capture if needed.
+
+    When the first channel request arrives, we launch ONE subprocess that captures
+    ALL channels for the device. Subsequent requests within TTL read from cache.
+    """
+    now = _time.time()
+    if _sdk_batch_disabled_until.get(device_id, 0.0) > now:
+        return await _sdk_single_snapshot_fallback(
+            device_id=device_id,
+            host=host,
+            port=port,
+            username=username,
+            password=password,
+            channel_id=channel_id,
+            lib_path=lib_path,
+        )
+
+    # Check cache first
+    cached = _sdk_batch_cache.get(device_id)
+    if cached:
+        ts, results, errors = cached
+        if _time.time() - ts < _SDK_BATCH_TTL:
+            image = results.get(channel_id)
+            if image is not None:
+                return image
+            image = await _sdk_single_snapshot_fallback(
+                device_id=device_id,
+                host=host,
+                port=port,
+                username=username,
+                password=password,
+                channel_id=channel_id,
+                lib_path=lib_path,
+            )
+            if image is not None:
+                results[channel_id] = image
+                _sdk_batch_cache[device_id] = (ts, results, errors)
+            return image
+
+    # Need to fetch — acquire per-device lock so only one batch runs
+    lock = _get_sdk_batch_lock(device_id)
+    async with lock:
+        # Double-check after acquiring lock
+        cached = _sdk_batch_cache.get(device_id)
+        if cached:
+            ts, results, errors = cached
+            if _time.time() - ts < _SDK_BATCH_TTL:
+                image = results.get(channel_id)
+                if image is not None:
+                    return image
+                image = await _sdk_single_snapshot_fallback(
+                    device_id=device_id,
+                    host=host,
+                    port=port,
+                    username=username,
+                    password=password,
+                    channel_id=channel_id,
+                    lib_path=lib_path,
+                )
+                if image is not None:
+                    results[channel_id] = image
+                    _sdk_batch_cache[device_id] = (ts, results, errors)
+                return image
+
+        # Get all channel IDs for this device from health data
+        all_channels = _get_channel_ids_from_health(health_json)
+        if not all_channels:
+            all_channels = [channel_id]  # fallback: at least this channel
+
+        logger.info(
+            "SDK batch snapshot for device=%s channels=%s",
+            device_id, ",".join(all_channels),
+        )
+
+        results, errors = await _sdk_batch_snapshot_subprocess(
+            host, port, username, password, all_channels, lib_path,
+        )
+
+        _sdk_batch_cache[device_id] = (_time.time(), results, errors)
+
+        if all_channels and len(results) == 0 and all(errors.get(ch) == "timeout" for ch in all_channels):
+            streak = _sdk_batch_timeout_streak.get(device_id, 0) + 1
+            _sdk_batch_timeout_streak[device_id] = streak
+            if streak >= _SDK_BATCH_TIMEOUT_STREAK_LIMIT:
+                _sdk_batch_disabled_until[device_id] = _time.time() + _SDK_BATCH_DISABLE_SECONDS
+                logger.warning(
+                    "SDK batch disabled temporarily for device=%s for %ss after %d timeout batches",
+                    device_id, _SDK_BATCH_DISABLE_SECONDS, streak,
+                )
+        else:
+            _sdk_batch_timeout_streak[device_id] = 0
+
+        if errors:
+            failed = list(errors.keys())[:3]
+            logger.warning(
+                "SDK batch snapshot errors for device=%s: %s (and %d more)",
+                device_id, "; ".join(f"ch{k}: {errors[k]}" for k in failed),
+                max(0, len(errors) - 3),
+            )
+
+        image = results.get(channel_id)
+        if image is not None:
+            return image
+
+        # Batch can timeout on busy NVRs (many channels). Fallback to a
+        # single-channel SDK capture so user still gets the requested frame.
+        image = await _sdk_single_snapshot_fallback(
+            device_id=device_id,
+            host=host,
+            port=port,
+            username=username,
+            password=password,
+            channel_id=channel_id,
+            lib_path=lib_path,
+        )
+        if image is not None:
+            # Warm the cache with the successful single capture.
+            cached_ts, cached_results, cached_errors = _sdk_batch_cache.get(
+                device_id, (_time.time(), {}, {}),
+            )
+            cached_results[channel_id] = image
+            _sdk_batch_cache[device_id] = (cached_ts, cached_results, cached_errors)
+        return image
+
+
+def _get_channel_ids_from_health(health_json: dict | None) -> list[str]:
+    """Extract channel IDs from device health_json."""
+    if not health_json or not isinstance(health_json, dict):
+        return []
+    cameras = health_json.get("cameras", [])
+    return [str(c.get("channel_id", "")) for c in cameras if c.get("channel_id")]
+
+
+async def _sdk_batch_snapshot_subprocess(
+    host: str, port: int, username: str, password: str,
+    channel_ids: list[str], lib_path: str,
+) -> tuple[dict[str, bytes], dict[str, str]]:
+    """Run batch SDK snapshot in one subprocess — one login, all channels."""
+    import base64 as _b64
+    import sys
+
+    cmd = [
+        sys.executable, "-m", "cctv_monitor.polling.sdk_worker",
+        "--host", host,
+        "--port", str(port),
+        "--user", username,
+        "--password", password,
+        "--lib-path", lib_path,
+        "--snapshot-batch",
+        "--snapshot-channels", ",".join(channel_ids),
+    ]
+
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+
+    timeout_s = max(30, min(120, 5 * len(channel_ids)))
+    try:
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout_s)
+    except asyncio.TimeoutError:
+        proc.kill()
+        await proc.wait()
+        return {}, {ch: "timeout" for ch in channel_ids}
+
+    if stderr:
+        debug_info = stderr.decode(errors="replace").strip()
+        if debug_info:
+            logger.info("SDK batch snapshot subprocess: %s", debug_info)
+
+    if proc.returncode != 0:
+        err_msg = stderr.decode(errors="replace").strip() if stderr else f"exit code {proc.returncode}"
+        return {}, {ch: err_msg for ch in channel_ids}
+
+    try:
+        import json
+        data = json.loads(stdout.decode("utf-8"))
+        results: dict[str, bytes] = {}
+        for ch_id, b64_jpeg in data.get("results", {}).items():
+            jpeg = _b64.b64decode(b64_jpeg)
+            if len(jpeg) >= 2 and jpeg[:2] == b"\xff\xd8":
+                results[ch_id] = jpeg
+        return results, data.get("errors", {})
+    except Exception as exc:
+        logger.warning("Failed to parse SDK batch snapshot output: %s", exc)
+        return {}, {ch: str(exc) for ch in channel_ids}

@@ -505,6 +505,11 @@ class HCNetSDKBinding:
                 ctypes.c_char_p, c_uint, ctypes.POINTER(c_uint),
             ]
             lib.NET_DVR_CaptureJPEGPicture_NEW.restype = ctypes.c_int
+            # Legacy file-based JPEG capture (works better on some old NVRs)
+            lib.NET_DVR_CaptureJPEGPicture.argtypes = [
+                c_long, c_long, ctypes.POINTER(NET_DVR_JPEGPARA), ctypes.c_char_p,
+            ]
+            lib.NET_DVR_CaptureJPEGPicture.restype = ctypes.c_int
 
             # NET_DVR_Login_V40(LPNET_DVR_USER_LOGIN_INFO,
             #   LPNET_DVR_DEVICEINFO_V40) -> LONG
@@ -913,43 +918,106 @@ class HCNetSDKBinding:
 
         Returns raw JPEG bytes.
         """
-        jpeg_para = NET_DVR_JPEGPARA()
-        jpeg_para.wPicSize = 0xFF   # auto resolution
-        jpeg_para.wPicQuality = 0   # best quality
-
         buffer_size = 2 * 1024 * 1024  # 2 MB
         pic_buffer = create_string_buffer(buffer_size)
-        size_returned = c_uint(0)
+        # Some devices reject "auto" size or specific quality levels with
+        # NET_DVR error 29. Try a short list of safe combinations first.
+        jpeg_variants = [
+            (0xFF, 0),  # auto size, best quality
+            (0xFF, 1),
+            (0xFF, 2),
+            (0, 0),     # CIF
+            (1, 0),     # QCIF
+            (2, 0),     # 4CIF/D1
+            (5, 0),     # 720p
+        ]
+        last_error_code = 0
+        last_error_message = "NET_DVR_CaptureJPEGPicture_NEW failed"
 
-        ok = self._lib.NET_DVR_CaptureJPEGPicture_NEW(
-            user_id,
-            channel,
-            ctypes.byref(jpeg_para),
-            pic_buffer,
-            buffer_size,
-            ctypes.byref(size_returned),
+        for pic_size, pic_quality in jpeg_variants:
+            jpeg_para = NET_DVR_JPEGPARA()
+            jpeg_para.wPicSize = pic_size
+            jpeg_para.wPicQuality = pic_quality
+            size_returned = c_uint(0)
+
+            ok = self._lib.NET_DVR_CaptureJPEGPicture_NEW(
+                user_id,
+                channel,
+                ctypes.byref(jpeg_para),
+                pic_buffer,
+                buffer_size,
+                ctypes.byref(size_returned),
+            )
+            if not ok:
+                last_error_code = self.get_last_error()
+                last_error_message = (
+                    "NET_DVR_CaptureJPEGPicture_NEW failed "
+                    f"(ch={channel}, size={pic_size}, quality={pic_quality})"
+                )
+                continue
+
+            actual_size = size_returned.value
+            if actual_size <= 0:
+                last_error_code = 0
+                last_error_message = (
+                    f"Snapshot returned empty buffer (ch={channel}, size={pic_size}, quality={pic_quality})"
+                )
+                continue
+
+            data = pic_buffer.raw[:actual_size]
+            if len(data) < 2 or data[:2] != b"\xff\xd8":
+                last_error_code = 0
+                last_error_message = (
+                    f"Snapshot data is not valid JPEG (ch={channel}, size={pic_size}, quality={pic_quality})"
+                )
+                continue
+            return data
+
+        # Fallback for old DVR/NVR firmware: file-based capture API.
+        # Hikvision demos still use this path for compatibility.
+        try:
+            import os
+            import tempfile
+
+            for pic_size, pic_quality in jpeg_variants:
+                jpeg_para = NET_DVR_JPEGPARA()
+                jpeg_para.wPicSize = pic_size
+                jpeg_para.wPicQuality = pic_quality
+                fd, tmp_path = tempfile.mkstemp(prefix=f"hksnap_{channel}_", suffix=".jpg")
+                os.close(fd)
+                try:
+                    ok = self._lib.NET_DVR_CaptureJPEGPicture(
+                        user_id,
+                        channel,
+                        ctypes.byref(jpeg_para),
+                        os.fsencode(tmp_path),
+                    )
+                    if not ok:
+                        last_error_code = self.get_last_error()
+                        last_error_message = (
+                            "NET_DVR_CaptureJPEGPicture failed "
+                            f"(ch={channel}, size={pic_size}, quality={pic_quality})"
+                        )
+                        continue
+                    with open(tmp_path, "rb") as f:
+                        data = f.read()
+                    if len(data) >= 2 and data[:2] == b"\xff\xd8":
+                        return data
+                    last_error_code = 0
+                    last_error_message = (
+                        f"Legacy snapshot data is not valid JPEG (ch={channel}, size={pic_size}, quality={pic_quality})"
+                    )
+                finally:
+                    try:
+                        os.remove(tmp_path)
+                    except OSError:
+                        pass
+        except Exception:
+            # Keep original SDK error context below.
+            pass
+
+        raise SdkError(
+            device_id=str(user_id),
+            error_code=last_error_code,
+            message=last_error_message,
         )
-        if not ok:
-            code = self.get_last_error()
-            raise SdkError(
-                device_id=str(user_id),
-                error_code=code,
-                message=f"NET_DVR_CaptureJPEGPicture_NEW failed (ch={channel})",
-            )
-
-        actual_size = size_returned.value
-        if actual_size <= 0:
-            raise SdkError(
-                device_id=str(user_id),
-                error_code=0,
-                message=f"Snapshot returned empty buffer (ch={channel})",
-            )
-
-        data = pic_buffer.raw[:actual_size]
-        if len(data) < 2 or data[:2] != b"\xff\xd8":
-            raise SdkError(
-                device_id=str(user_id),
-                error_code=0,
-                message=f"Snapshot data is not valid JPEG (ch={channel})",
-            )
-        return data

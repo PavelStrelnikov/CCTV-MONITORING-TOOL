@@ -1,10 +1,14 @@
 """ISAPI transport for Hikvision devices using httpx with Digest Auth."""
 
+import logging
+
 import httpx
 
 from cctv_monitor.core.http_client import HttpClientManager
 from cctv_monitor.drivers.hikvision.errors import IsapiAuthError, IsapiError
 from cctv_monitor.drivers.hikvision.transports.base import HikvisionTransport
+
+logger = logging.getLogger(__name__)
 
 
 class IsapiTransport(HikvisionTransport):
@@ -124,34 +128,55 @@ class IsapiTransport(HikvisionTransport):
         return {"raw_xml": response.text}
 
     async def get_snapshot(self, channel_id: str) -> bytes:
-        # ISAPI streaming channels: sequential_number * 100 + stream_type
-        # channel_id "1" -> streaming "101", channel_id "2" -> "201"
-        # SDK digital channels start at 33: channel_id "33" -> sequential 1 -> "101"
+        # Different Hikvision models expose snapshot channels in different formats:
+        # 1) Sequential track format: 101, 201, ...
+        # 2) Raw channel index: 1, 2, ...
+        # 3) Digital SDK-like index: 3301, 3401, ...
+        # We try multiple candidates to make snapshots resilient across DVR/NVR variants.
+        candidates: list[str] = []
         try:
-            ch_num = int(channel_id)
-            if ch_num >= 33:
-                ch_num = ch_num - 32  # convert SDK digital channel to sequential
-            streaming_ch = str(ch_num * 100 + 1)
+            raw_num = int(channel_id)
+            candidates.append(str(raw_num))  # raw ID from API
+            candidates.append(str(raw_num * 100 + 1))  # main stream
+            candidates.append(str(raw_num * 100 + 2))  # sub stream
+            if raw_num >= 33:
+                seq = raw_num - 32
+                candidates.append(str(seq))
+                candidates.append(str(seq * 100 + 1))
+                candidates.append(str(seq * 100 + 2))
         except (ValueError, TypeError):
-            streaming_ch = channel_id
+            candidates.append(channel_id)
+
+        # Deduplicate while preserving order.
+        seen: set[str] = set()
+        channel_candidates = [c for c in candidates if c and not (c in seen or seen.add(c))]
 
         client = await self._client_manager.get_client()
         snap_timeout = httpx.Timeout(connect=5.0, read=15.0, write=5.0, pool=10.0)
 
-        # Try StreamingProxy first (works on NVRs), fall back to Streaming/channels
-        for template in (self.SNAPSHOT_PROXY, self.SNAPSHOT_DIRECT):
-            path = template.format(channel_id=streaming_ch)
-            url = f"{self._base_url}{path}"
-            response = await client.request(
-                "GET", url=url, auth=self._auth, timeout=snap_timeout,
-            )
-            if response.status_code == 401:
-                raise IsapiAuthError(device_id=self._device_id)
-            if response.status_code < 400:
-                return response.content
+        response: httpx.Response | None = None
+        # Try StreamingProxy first (works on many NVRs), then direct endpoint.
+        for candidate in channel_candidates:
+            for template in (self.SNAPSHOT_PROXY, self.SNAPSHOT_DIRECT):
+                path = template.format(channel_id=candidate)
+                url = f"{self._base_url}{path}"
+                response = await client.request(
+                    "GET", url=url, auth=self._auth, timeout=snap_timeout,
+                )
+                if response.status_code == 401:
+                    raise IsapiAuthError(device_id=self._device_id)
+                if response.status_code < 400:
+                    return response.content
+                logger.debug(
+                    "snapshot attempt %s channel_id=%s candidate=%s -> HTTP %s",
+                    path, channel_id, candidate, response.status_code,
+                )
 
         raise IsapiError(
             device_id=self._device_id,
-            status_code=response.status_code,
-            message=f"Snapshot error: HTTP {response.status_code}",
+            status_code=response.status_code if response is not None else 500,
+            message=(
+                f"Snapshot ch={channel_id} failed for candidates={channel_candidates}; "
+                f"HTTP {response.status_code if response is not None else 'n/a'}"
+            ),
         )

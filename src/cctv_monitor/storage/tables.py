@@ -11,6 +11,22 @@ class Base(DeclarativeBase):
     pass
 
 
+class FolderTable(Base):
+    __tablename__ = "folders"
+    __table_args__ = (
+        UniqueConstraint("parent_id", "name", name="uq_folder_parent_name"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    parent_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("folders.id", ondelete="CASCADE"), nullable=True
+    )
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    color: Mapped[str | None] = mapped_column(String(7), nullable=True)
+    icon: Mapped[str | None] = mapped_column(String(50), nullable=True)
+
+
 class PollingPolicyTable(Base):
     __tablename__ = "polling_policies"
 
@@ -44,6 +60,9 @@ class DeviceTable(Base):
     last_poll_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_health_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     ignored_channels: Mapped[list | None] = mapped_column(JSON, nullable=True, default=None)
+    folder_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("folders.id", ondelete="SET NULL"), nullable=True
+    )
 
 
 class DeviceCapabilityTable(Base):

@@ -35,6 +35,8 @@ from cctv_monitor.telegram.formatters import (
 def build_router(api_client: TelegramApiClient) -> Router:
     router = Router(name="telegram_commands")
     device_cache_by_chat: dict[int, list[dict]] = {}
+    folder_choices_by_chat: dict[int, list[tuple[int | None, str]]] = {}
+    selected_folder_by_chat: dict[int, int | None] = {}
     channels_cache_by_chat: dict[int, dict[int, list[dict]]] = {}
     mode_by_chat: dict[int, str] = {}
     active_device_idx_by_chat: dict[int, int] = {}
@@ -117,8 +119,27 @@ def build_router(api_client: TelegramApiClient) -> Router:
             nav_row.append(KeyboardButton(text="Next"))
         if nav_row:
             rows.append(nav_row)
-        rows.append([KeyboardButton(text="Exit")])
+        rows.append([KeyboardButton(text="Back"), KeyboardButton(text="Exit")])
         return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
+
+    def _folders_menu(choices: list[tuple[int | None, str]]) -> ReplyKeyboardMarkup:
+        rows: list[list[KeyboardButton]] = []
+        current_row: list[KeyboardButton] = []
+        for i, (_, name) in enumerate(choices, start=1):
+            current_row.append(KeyboardButton(text=f"{i}. {name[:18]}"))
+            if len(current_row) == 2:
+                rows.append(current_row)
+                current_row = []
+        if current_row:
+            rows.append(current_row)
+        rows.append([KeyboardButton(text="Back"), KeyboardButton(text="Exit")])
+        return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
+
+    def _format_folder_choices(choices: list[tuple[int | None, str]]) -> str:
+        lines = ["<b>FOLDERS</b>"]
+        for i, (_, name) in enumerate(choices, start=1):
+            lines.append(f"{i}. <b>{name}</b>")
+        return "\n".join(lines)
 
     def _devices_keyboard(devices: list[dict], page: int) -> InlineKeyboardMarkup:
         total = len(devices)
@@ -233,6 +254,52 @@ def build_router(api_client: TelegramApiClient) -> Router:
             format_devices(devices, page=page, page_size=DEVICES_PAGE_SIZE),
             parse_mode="HTML",
             reply_markup=_devices_menu(devices, page),
+        )
+
+    async def _show_folders(message: Message, chat_id: int) -> None:
+        try:
+            raw = await api_client.list_folders()
+        except httpx.HTTPError:
+            await message.answer("Failed to fetch folders.", reply_markup=_main_menu())
+            return
+
+        choices: list[tuple[int | None, str]] = [(None, "All devices")]
+        for top in raw:
+            top_name = str(top.get("name", "Folder"))
+            top_id = top.get("id")
+            if isinstance(top_id, int):
+                choices.append((top_id, top_name))
+            for child in top.get("children", []) or []:
+                child_name = str(child.get("name", "Subfolder"))
+                child_id = child.get("id")
+                if isinstance(child_id, int):
+                    choices.append((child_id, f"{top_name} / {child_name}"))
+
+        folder_choices_by_chat[chat_id] = choices
+        mode_by_chat[chat_id] = "folders"
+        await message.answer(
+            _format_folder_choices(choices),
+            parse_mode="HTML",
+            reply_markup=_folders_menu(choices),
+        )
+
+    async def _show_devices_for_selected_folder(message: Message, chat_id: int, search: str | None = None) -> None:
+        folder_id = selected_folder_by_chat.get(chat_id)
+        payload = await api_client.list_devices(search=search, folder_id=folder_id, limit=30)
+        device_cache_by_chat[chat_id] = payload
+        mode_by_chat[chat_id] = "devices"
+        device_page_by_chat[chat_id] = 0
+        if not payload:
+            await message.answer(
+                "<b>DEVICES</b>\nNo devices found.",
+                parse_mode="HTML",
+                reply_markup=_devices_menu(payload, page=0),
+            )
+            return
+        await message.answer(
+            format_devices(payload, page=0, page_size=DEVICES_PAGE_SIZE),
+            parse_mode="HTML",
+            reply_markup=_devices_menu(payload, page=0),
         )
 
     async def _show_channels_page(callback: CallbackQuery, idx: int, page: int) -> None:
@@ -412,7 +479,9 @@ def build_router(api_client: TelegramApiClient) -> Router:
 
     @router.message(F.text == "Devices")
     async def handle_menu_devices(message: Message) -> None:
-        await handle_devices(message)
+        if message.chat is None:
+            return
+        await _show_folders(message, message.chat.id)
 
     @router.message(F.text == "Help")
     async def handle_menu_help(message: Message) -> None:
@@ -443,7 +512,7 @@ def build_router(api_client: TelegramApiClient) -> Router:
             )
             return
 
-        if mode in ("device", "devices"):
+        if mode == "device":
             devices = device_cache_by_chat.get(chat_id, [])
             if not devices:
                 await message.answer("No device list in context. Use Devices.")
@@ -455,6 +524,15 @@ def build_router(api_client: TelegramApiClient) -> Router:
                 parse_mode="HTML",
                 reply_markup=_devices_menu(devices, page),
             )
+            return
+
+        if mode == "devices":
+            await _show_folders(message, chat_id)
+            return
+
+        if mode == "folders":
+            mode_by_chat[chat_id] = "main"
+            await message.answer("Main menu", reply_markup=_main_menu())
             return
 
         await message.answer("Main menu", reply_markup=_main_menu())
@@ -534,30 +612,6 @@ def build_router(api_client: TelegramApiClient) -> Router:
                 parse_mode="HTML",
                 reply_markup=_devices_menu(devices, page),
             )
-
-    @router.message(F.text.regexp(r"^\d+\.\s"))
-    async def handle_device_select_text(message: Message) -> None:
-        if message.chat is None:
-            return
-        chat_id = message.chat.id
-        if mode_by_chat.get(chat_id) != "devices":
-            return
-        match = re.match(r"^(\d+)\.\s", message.text or "")
-        if not match:
-            return
-        idx = int(match.group(1)) - 1
-        items = device_cache_by_chat.get(chat_id, [])
-        if idx < 0 or idx >= len(items):
-            await message.answer("Invalid device selection.")
-            return
-        active_device_idx_by_chat[chat_id] = idx
-        mode_by_chat[chat_id] = "device"
-        device = items[idx]
-        await message.answer(
-            f"<b>SELECTED DEVICE</b>\n{device.get('name','Unknown')}\nID: <code>{device.get('device_id','unknown')}</code>",
-            parse_mode="HTML",
-            reply_markup=_device_menu(),
-        )
 
     @router.message(F.text.regexp(r"^CH\s+"))
     async def handle_channel_snapshot_text(message: Message) -> None:
@@ -657,24 +711,56 @@ def build_router(api_client: TelegramApiClient) -> Router:
         allowed, _ = await _authorize_and_audit(message, "/devices")
         if not allowed:
             return
+        if message.chat is None:
+            return
         parts = (message.text or "").split(maxsplit=1)
         search = parts[1].strip() if len(parts) > 1 else None
         try:
-            payload = await api_client.list_devices(search=search, limit=30)
-            if message.chat:
-                device_cache_by_chat[message.chat.id] = payload
-                mode_by_chat[message.chat.id] = "devices"
-                device_page_by_chat[message.chat.id] = 0
-            if not payload:
-                await message.answer("<b>DEVICES</b>\nNo devices found.", parse_mode="HTML")
-                return
-            await message.answer(
-                format_devices(payload, page=0, page_size=DEVICES_PAGE_SIZE),
-                parse_mode="HTML",
-                reply_markup=_devices_menu(payload, page=0),
-            )
+            await _show_devices_for_selected_folder(message, message.chat.id, search=search)
         except httpx.HTTPError:
             await message.answer("Failed to fetch devices list.")
+
+    @router.message(F.text.regexp(r"^\d+\.\s"))
+    async def handle_numeric_selection(message: Message) -> None:
+        if message.chat is None:
+            return
+        chat_id = message.chat.id
+        mode = mode_by_chat.get(chat_id)
+        match = re.match(r"^(\d+)\.\s", message.text or "")
+        if not match:
+            return
+        one_based = int(match.group(1))
+
+        if mode == "folders":
+            choices = folder_choices_by_chat.get(chat_id, [])
+            idx = one_based - 1
+            if idx < 0 or idx >= len(choices):
+                await message.answer("Invalid folder selection.")
+                return
+            folder_id, folder_name = choices[idx]
+            selected_folder_by_chat[chat_id] = folder_id
+            await message.answer(f"Selected folder: <b>{folder_name}</b>", parse_mode="HTML")
+            try:
+                await _show_devices_for_selected_folder(message, chat_id)
+            except httpx.HTTPError:
+                await message.answer("Failed to fetch devices list.")
+            return
+
+        if mode == "devices":
+            idx = one_based - 1
+            items = device_cache_by_chat.get(chat_id, [])
+            if idx < 0 or idx >= len(items):
+                await message.answer("Invalid device selection.")
+                return
+            active_device_idx_by_chat[chat_id] = idx
+            mode_by_chat[chat_id] = "device"
+            device = items[idx]
+            await message.answer(
+                f"<b>SELECTED DEVICE</b>\n{device.get('name','Unknown')}\nID: <code>{device.get('device_id','unknown')}</code>",
+                parse_mode="HTML",
+                reply_markup=_device_menu(),
+            )
+            return
 
     @router.message(Command("poll"))
     async def handle_poll(message: Message) -> None:

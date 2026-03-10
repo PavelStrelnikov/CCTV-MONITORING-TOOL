@@ -1,9 +1,10 @@
 from datetime import datetime, timezone, timedelta
-from sqlalchemy import select, update, delete
+from sqlalchemy import select, update, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from cctv_monitor.storage.tables import (
     DeviceTable, CheckResultTable, AlertTable, SnapshotTable,
     DeviceTagTable, TagDefinitionTable, DeviceHealthLogTable, SystemSettingTable,
+    FolderTable,
     TelegramUserTable, TelegramChatTable, TelegramSubscriptionTable,
     TelegramAuditLogTable, TelegramDeliveryLogTable,
 )
@@ -49,6 +50,111 @@ class DeviceRepository:
         await self._session.delete(device)
         await self._session.flush()
         return True
+
+
+class FolderRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def list_all(self) -> list[FolderTable]:
+        result = await self._session.execute(
+            select(FolderTable).order_by(FolderTable.sort_order, FolderTable.name)
+        )
+        return list(result.scalars().all())
+
+    async def get_by_id(self, folder_id: int) -> FolderTable | None:
+        return await self._session.get(FolderTable, folder_id)
+
+    async def create(self, name: str, parent_id: int | None = None, color: str | None = None, icon: str | None = None) -> FolderTable:
+        if parent_id is not None:
+            parent = await self.get_by_id(parent_id)
+            if parent is None:
+                raise ValueError("Parent folder not found")
+            if parent.parent_id is not None:
+                raise ValueError("Maximum folder depth is 2 levels")
+        folder = FolderTable(name=name, parent_id=parent_id, color=color, icon=icon)
+        self._session.add(folder)
+        await self._session.flush()
+        return folder
+
+    async def get_children(self, folder_id: int) -> list[FolderTable]:
+        result = await self._session.execute(
+            select(FolderTable).where(FolderTable.parent_id == folder_id)
+        )
+        return list(result.scalars().all())
+
+    async def update(self, folder_id: int, **fields) -> FolderTable | None:
+        folder = await self.get_by_id(folder_id)
+        if folder is None:
+            return None
+        for key, value in fields.items():
+            setattr(folder, key, value)
+        await self._session.flush()
+        return folder
+
+    async def delete(self, folder_id: int) -> bool:
+        folder = await self.get_by_id(folder_id)
+        if folder is None:
+            return False
+        # Move devices in this folder (and subfolders) to root before delete
+        # Subfolders cascade-delete, but their devices need SET NULL too
+        subfolder_ids = [
+            r.id for r in (await self._session.execute(
+                select(FolderTable.id).where(FolderTable.parent_id == folder_id)
+            )).scalars().all()
+        ]
+        all_folder_ids = [folder_id] + subfolder_ids
+        await self._session.execute(
+            update(DeviceTable)
+            .where(DeviceTable.folder_id.in_(all_folder_ids))
+            .values(folder_id=None)
+        )
+        await self._session.delete(folder)
+        await self._session.flush()
+        return True
+
+    async def get_tree(self) -> list[dict]:
+        folders = await self.list_all()
+        # Count devices per folder
+        count_result = await self._session.execute(
+            select(DeviceTable.folder_id, func.count())
+            .where(DeviceTable.folder_id.is_not(None))
+            .group_by(DeviceTable.folder_id)
+        )
+        device_counts = dict(count_result.all())
+
+        # Build tree: top-level folders with children
+        top_level = [f for f in folders if f.parent_id is None]
+        children_map: dict[int, list[FolderTable]] = {}
+        for f in folders:
+            if f.parent_id is not None:
+                children_map.setdefault(f.parent_id, []).append(f)
+
+        tree = []
+        for folder in top_level:
+            kids = children_map.get(folder.id, [])
+            child_device_count = sum(device_counts.get(k.id, 0) for k in kids)
+            tree.append({
+                "id": folder.id,
+                "name": folder.name,
+                "sort_order": folder.sort_order,
+                "color": folder.color,
+                "icon": folder.icon,
+                "children": [
+                    {
+                        "id": k.id,
+                        "name": k.name,
+                        "parent_id": k.parent_id,
+                        "sort_order": k.sort_order,
+                        "color": k.color,
+                        "icon": k.icon,
+                        "device_count": device_counts.get(k.id, 0),
+                    }
+                    for k in kids
+                ],
+                "device_count": device_counts.get(folder.id, 0) + child_device_count,
+            })
+        return tree
 
 
 class CheckResultRepository:

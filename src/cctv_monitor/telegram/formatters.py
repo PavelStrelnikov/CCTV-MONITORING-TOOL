@@ -20,11 +20,22 @@ def format_alerts(alerts: list[dict]) -> str:
     if not alerts:
         return "<b>Active Alerts</b>\nNo active alerts."
     lines = ["<b>ACTIVE ALERTS</b>"]
-    for alert in alerts:
-        severity = escape(str(alert.get("severity", "unknown")))
+    severity_icon = {
+        "critical": "🔴",
+        "warning": "🟠",
+        "info": "🔵",
+    }
+    for i, alert in enumerate(alerts, start=1):
+        severity_raw = str(alert.get("severity", "unknown")).lower()
+        icon = severity_icon.get(severity_raw, "⚪")
+        severity = escape(severity_raw.upper())
         device_name = escape(str(alert.get("device_name") or alert.get("device_id", "unknown-device")))
         message = escape(str(alert.get("message", "no-message")))
-        lines.append(f"• <b>[{severity}]</b> {device_name}\n  {message}")
+        lines.append(
+            f"\n<b>{i}. {icon} {severity}</b>\n"
+            f"<b>Device:</b> {device_name}\n"
+            f"<b>Issue:</b> {message}"
+        )
     return "\n".join(lines)
 
 
@@ -68,12 +79,27 @@ def format_devices(devices: list[dict], *, page: int, page_size: int) -> str:
     page = max(0, min(page, total_pages - 1))
     start = page * page_size
     end = min(start + page_size, total)
+    page_devices = devices[start:end]
+
+    # Group by folder_path for display
+    groups: dict[str, list[tuple[int, dict]]] = {}
+    for i, d in enumerate(page_devices, start=start + 1):
+        folder = d.get("folder_path") or ""
+        groups.setdefault(folder, []).append((i, d))
 
     lines = [f"<b>DEVICES</b>  (page {page + 1}/{total_pages})"]
-    for i, d in enumerate(devices[start:end], start=start + 1):
-        name = escape(str(d.get("name", "Unknown")))
-        device_id = escape(str(d.get("device_id", "unknown")))
-        lines.append(f"{i}. <b>{name}</b>\n   id: <code>{device_id}</code>")
+
+    # Sort: folders first (alphabetically), then no-folder
+    sorted_keys = sorted(groups.keys(), key=lambda k: (k == "", k))
+    for folder_key in sorted_keys:
+        if folder_key:
+            lines.append(f"\n📁 <b>{escape(folder_key)}</b>")
+        elif len(sorted_keys) > 1:
+            lines.append(f"\n📂 <b>No folder</b>")
+        for i, d in groups[folder_key]:
+            name = escape(str(d.get("name", "Unknown")))
+            device_id = escape(str(d.get("device_id", "unknown")))
+            lines.append(f"{i}. <b>{name}</b>\n   id: <code>{device_id}</code>")
     return "\n".join(lines)
 
 

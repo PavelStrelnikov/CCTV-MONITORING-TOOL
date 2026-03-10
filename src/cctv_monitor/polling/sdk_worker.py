@@ -18,6 +18,49 @@ import time
 from datetime import datetime, timezone
 
 
+def _build_sdk_channel_candidates(
+    ch_id: int,
+    *,
+    start_dchan: int,
+    start_chan: int,
+    ip_chan_num: int,
+    chan_num: int,
+) -> list[int]:
+    """Build candidate SDK channel numbers for old/new NVR channel mapping.
+
+    Some legacy firmwares expose snapshot channels as 1..N, while others
+    require digital start offset (e.g. 33..). We try a short ordered list.
+    """
+    candidates: list[int] = []
+
+    # 1) Raw channel as provided by API.
+    candidates.append(ch_id)
+
+    # 2) Digital-IP mapping (common NVR case): 1..N -> start_dchan..start_dchan+N-1.
+    if ip_chan_num > 0:
+        candidates.append(start_dchan + ch_id - start_chan)
+        # If API already gave digital channel (33+), try converting back to slot index.
+        if ch_id >= start_dchan:
+            candidates.append(ch_id - start_dchan + start_chan)
+
+    # 3) Analog mapping fallback (older DVR layouts).
+    if chan_num > 0:
+        candidates.append(start_chan + ch_id - 1)
+
+    # 4) Legacy "digital starts at 33" heuristic used by some old models.
+    if ch_id > 32:
+        candidates.append(ch_id - 32)
+
+    # Deduplicate and keep only positive channels.
+    out: list[int] = []
+    seen: set[int] = set()
+    for c in candidates:
+        if c > 0 and c not in seen:
+            seen.add(c)
+            out.append(c)
+    return out
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", required=True)
@@ -33,7 +76,16 @@ def main() -> None:
                         help="Capture JPEG snapshot for a single channel")
     parser.add_argument("--channel", type=int, default=0,
                         help="Channel number for snapshot mode")
+    parser.add_argument("--snapshot-batch", action="store_true",
+                        help="Capture JPEG snapshots for multiple channels (JSON output)")
+    parser.add_argument("--snapshot-channels", type=str, default="",
+                        help="Comma-separated channel IDs for batch snapshot mode")
     args = parser.parse_args()
+
+    # Batch snapshot mode: one login, multiple channels, JSON output
+    if args.snapshot_batch:
+        _snapshot_batch_mode(args)
+        return
 
     # Snapshot mode: capture JPEG and write binary to stdout
     if args.snapshot:
@@ -201,6 +253,81 @@ def main() -> None:
         sys.stdout.flush()
 
 
+def _snapshot_batch_mode(args) -> None:
+    """Capture JPEG snapshots for multiple channels with a single SDK login.
+
+    Writes JSON to stdout: {"results": {"<channel_id>": "<base64_jpeg>", ...}, "errors": {"<channel_id>": "<error>", ...}}
+    """
+    import base64
+    import socket
+
+    channel_ids = [int(ch.strip()) for ch in args.snapshot_channels.split(",") if ch.strip()]
+    if not channel_ids:
+        sys.stderr.write("No channels specified for batch snapshot\n")
+        sys.exit(1)
+
+    try:
+        # TCP probe
+        try:
+            with socket.create_connection((args.host, args.port), timeout=5):
+                pass
+        except (OSError, TimeoutError):
+            sys.stderr.write(f"SDK port {args.host}:{args.port} not reachable\n")
+            sys.exit(1)
+
+        from cctv_monitor.drivers.hikvision.transports.sdk_bindings import HCNetSDKBinding
+
+        binding = HCNetSDKBinding(lib_path=args.lib_path)
+        binding.init()
+
+        user_id, login_info = binding.login(
+            args.host, args.port, args.user, args.password,
+        )
+
+        start_dchan = login_info.get("start_dchan", 33)
+        start_chan = login_info.get("start_chan", 1)
+
+        results: dict[str, str] = {}
+        errors: dict[str, str] = {}
+
+        for ch_id in channel_ids:
+            candidates = _build_sdk_channel_candidates(
+                ch_id,
+                start_dchan=start_dchan,
+                start_chan=start_chan,
+                ip_chan_num=login_info.get("ip_chan_num", 0),
+                chan_num=login_info.get("chan_num", 0),
+            )
+            last_exc: Exception | None = None
+            for sdk_channel in candidates:
+                try:
+                    jpeg_bytes = binding.capture_jpeg(user_id, sdk_channel)
+                    results[str(ch_id)] = base64.b64encode(jpeg_bytes).decode("ascii")
+                    last_exc = None
+                    break
+                except Exception as exc:
+                    last_exc = exc
+            if last_exc is not None:
+                errors[str(ch_id)] = f"{last_exc}; tried={candidates}"
+
+        try:
+            binding.logout(user_id)
+        except Exception:
+            pass
+        try:
+            binding.cleanup()
+        except Exception:
+            pass
+
+        output = json.dumps({"results": results, "errors": errors})
+        sys.stdout.write(output)
+        sys.stdout.flush()
+
+    except Exception as exc:
+        sys.stderr.write(f"Batch snapshot failed: {exc}\n")
+        sys.exit(1)
+
+
 def _snapshot_mode(args) -> None:
     """Capture a JPEG snapshot and write raw bytes to stdout."""
     import socket
@@ -220,11 +347,38 @@ def _snapshot_mode(args) -> None:
         binding = HCNetSDKBinding(lib_path=args.lib_path)
         binding.init()
 
-        user_id, _login_info = binding.login(
+        user_id, login_info = binding.login(
             args.host, args.port, args.user, args.password,
         )
 
-        jpeg_bytes = binding.capture_jpeg(user_id, args.channel)
+        start_dchan = login_info.get("start_dchan", 33)
+        start_chan = login_info.get("start_chan", 1)
+        ip_chan_num = login_info.get("ip_chan_num", 0)
+        chan_num = login_info.get("chan_num", 0)
+        candidates = _build_sdk_channel_candidates(
+            args.channel,
+            start_dchan=start_dchan,
+            start_chan=start_chan,
+            ip_chan_num=ip_chan_num,
+            chan_num=chan_num,
+        )
+        sys.stderr.write(
+            f"snapshot: ch_in={args.channel} candidates={candidates} "
+            f"start_dchan={start_dchan} start_chan={start_chan} "
+            f"ip_chan={ip_chan_num} analog_chan={chan_num}\n"
+        )
+
+        jpeg_bytes = None
+        last_exc: Exception | None = None
+        for sdk_channel in candidates:
+            try:
+                jpeg_bytes = binding.capture_jpeg(user_id, sdk_channel)
+                last_exc = None
+                break
+            except Exception as exc:
+                last_exc = exc
+        if jpeg_bytes is None:
+            raise Exception(f"{last_exc}; tried={candidates}")
 
         # Write raw JPEG to stdout (binary mode)
         sys.stdout.buffer.write(jpeg_bytes)
