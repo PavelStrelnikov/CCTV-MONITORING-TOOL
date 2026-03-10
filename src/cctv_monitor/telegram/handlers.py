@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import httpx
 from aiogram import F, Router
 from aiogram.exceptions import TelegramBadRequest
@@ -35,6 +36,10 @@ def build_router(api_client: TelegramApiClient) -> Router:
     router = Router(name="telegram_commands")
     device_cache_by_chat: dict[int, list[dict]] = {}
     channels_cache_by_chat: dict[int, dict[int, list[dict]]] = {}
+    mode_by_chat: dict[int, str] = {}
+    active_device_idx_by_chat: dict[int, int] = {}
+    device_page_by_chat: dict[int, int] = {}
+    channels_page_by_chat: dict[int, int] = {}
     DEVICES_PAGE_SIZE = 12
     CHANNELS_PAGE_SIZE = 8
 
@@ -46,6 +51,74 @@ def build_router(api_client: TelegramApiClient) -> Router:
             ],
             resize_keyboard=True,
         )
+
+    def _device_menu() -> ReplyKeyboardMarkup:
+        return ReplyKeyboardMarkup(
+            keyboard=[
+                [KeyboardButton(text="Status"), KeyboardButton(text="Poll")],
+                [KeyboardButton(text="Network"), KeyboardButton(text="Credentials")],
+                [KeyboardButton(text="Disks"), KeyboardButton(text="Channels")],
+                [KeyboardButton(text="Back"), KeyboardButton(text="Exit")],
+            ],
+            resize_keyboard=True,
+        )
+
+    def _channels_menu(channels: list[dict], page: int) -> ReplyKeyboardMarkup:
+        total = len(channels)
+        total_pages = max(1, (total + CHANNELS_PAGE_SIZE - 1) // CHANNELS_PAGE_SIZE)
+        page = max(0, min(page, total_pages - 1))
+        start = page * CHANNELS_PAGE_SIZE
+        end = min(start + CHANNELS_PAGE_SIZE, total)
+
+        rows: list[list[KeyboardButton]] = []
+        current_row: list[KeyboardButton] = []
+        for ch in channels[start:end]:
+            ch_id = str(ch.get("channel_id", ""))
+            current_row.append(KeyboardButton(text=f"CH {ch_id}"))
+            if len(current_row) == 2:
+                rows.append(current_row)
+                current_row = []
+        if current_row:
+            rows.append(current_row)
+
+        nav_row: list[KeyboardButton] = []
+        if page > 0:
+            nav_row.append(KeyboardButton(text="Prev"))
+        if page < total_pages - 1:
+            nav_row.append(KeyboardButton(text="Next"))
+        if nav_row:
+            rows.append(nav_row)
+        rows.append([KeyboardButton(text="Back"), KeyboardButton(text="Exit")])
+        return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
+
+    def _devices_menu(devices: list[dict], page: int) -> ReplyKeyboardMarkup:
+        total = len(devices)
+        total_pages = max(1, (total + DEVICES_PAGE_SIZE - 1) // DEVICES_PAGE_SIZE)
+        page = max(0, min(page, total_pages - 1))
+        start = page * DEVICES_PAGE_SIZE
+        end = min(start + DEVICES_PAGE_SIZE, total)
+
+        rows: list[list[KeyboardButton]] = []
+        current_row: list[KeyboardButton] = []
+        for i, d in enumerate(devices[start:end], start=start + 1):
+            name = str(d.get("name", "Unknown"))
+            label = f"{i}. {name[:18]}"
+            current_row.append(KeyboardButton(text=label))
+            if len(current_row) == 2:
+                rows.append(current_row)
+                current_row = []
+        if current_row:
+            rows.append(current_row)
+
+        nav_row: list[KeyboardButton] = []
+        if page > 0:
+            nav_row.append(KeyboardButton(text="Prev"))
+        if page < total_pages - 1:
+            nav_row.append(KeyboardButton(text="Next"))
+        if nav_row:
+            rows.append(nav_row)
+        rows.append([KeyboardButton(text="Exit")])
+        return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
 
     def _devices_keyboard(devices: list[dict], page: int) -> InlineKeyboardMarkup:
         total = len(devices)
@@ -143,14 +216,23 @@ def build_router(api_client: TelegramApiClient) -> Router:
     async def _show_devices_page(message: Message, chat_id: int, page: int) -> None:
         devices = device_cache_by_chat.get(chat_id, [])
         if not devices:
+            mode_by_chat[chat_id] = "devices"
+            device_page_by_chat[chat_id] = 0
             await _safe_edit_message(message, "<b>DEVICES</b>\nNo devices found.", reply_markup=None)
             return
         total_pages = max(1, (len(devices) + DEVICES_PAGE_SIZE - 1) // DEVICES_PAGE_SIZE)
         page = max(0, min(page, total_pages - 1))
+        mode_by_chat[chat_id] = "devices"
+        device_page_by_chat[chat_id] = page
         await _safe_edit_message(
             message,
             format_devices(devices, page=page, page_size=DEVICES_PAGE_SIZE),
             reply_markup=_devices_keyboard(devices, page),
+        )
+        await message.answer(
+            format_devices(devices, page=page, page_size=DEVICES_PAGE_SIZE),
+            parse_mode="HTML",
+            reply_markup=_devices_menu(devices, page),
         )
 
     async def _show_channels_page(callback: CallbackQuery, idx: int, page: int) -> None:
@@ -162,10 +244,18 @@ def build_router(api_client: TelegramApiClient) -> Router:
         if not channels:
             await callback.message.answer("Channel list expired. Open Channels again.")
             return
+        mode_by_chat[chat_id] = "channels"
+        channels_page_by_chat[chat_id] = page
+        active_device_idx_by_chat[chat_id] = idx
         await _safe_edit_message(
             callback.message,
             format_channels(channels, page=page, page_size=CHANNELS_PAGE_SIZE),
             reply_markup=_channels_keyboard(idx, channels, page),
+        )
+        await callback.message.answer(
+            format_channels(channels, page=page, page_size=CHANNELS_PAGE_SIZE),
+            parse_mode="HTML",
+            reply_markup=_channels_menu(channels, page),
         )
 
     async def _log_callback(callback: CallbackQuery, command: str, status: str) -> None:
@@ -207,11 +297,91 @@ def build_router(api_client: TelegramApiClient) -> Router:
             await message.answer("Access denied. Contact system administrator.")
         return allowed, role
 
+    async def _get_active_device(message: Message) -> tuple[int, dict] | None:
+        if message.chat is None:
+            return None
+        chat_id = message.chat.id
+        idx = active_device_idx_by_chat.get(chat_id)
+        items = device_cache_by_chat.get(chat_id, [])
+        if idx is None or idx < 0 or idx >= len(items):
+            await message.answer("No selected device. Open Devices first.")
+            return None
+        return idx, items[idx]
+
+    async def _run_device_action(message: Message, action: str) -> None:
+        info = await _get_active_device(message)
+        if info is None:
+            return
+        idx, device = info
+        device_id = device.get("device_id", "")
+        if not device_id:
+            await message.answer("Invalid device selection.")
+            return
+
+        allowed, role = await _authorize_and_audit(message, f"/{action}")
+        if not allowed:
+            return
+
+        if action == "poll" and role not in ("operator", "admin"):
+            await message.answer("Insufficient role for poll.")
+            return
+        if action == "credentials" and role != "admin":
+            await message.answer("Credentials are available for admin only.")
+            return
+
+        try:
+            if action == "status":
+                payload = await api_client.get_device(device_id)
+                mode_by_chat[message.chat.id] = "device"
+                await message.answer(format_device_detail(payload), parse_mode="HTML", reply_markup=_device_menu())
+            elif action == "poll":
+                await message.answer("Polling started...", reply_markup=_device_menu())
+                payload = await api_client.poll_device(device_id)
+                await message.answer(format_poll_result(payload), parse_mode="HTML", reply_markup=_device_menu())
+            elif action == "network":
+                payload = await api_client.get_device(device_id)
+                await message.answer(format_network_info(payload), parse_mode="HTML", reply_markup=_device_menu())
+            elif action == "credentials":
+                payload = await api_client.get_credentials(device_id)
+                await message.answer(format_credentials(payload), parse_mode="HTML", reply_markup=_device_menu())
+            elif action == "disks":
+                payload = await api_client.get_device(device_id)
+                await message.answer(format_disks(payload), parse_mode="HTML", reply_markup=_device_menu())
+            elif action == "channels":
+                payload = await api_client.get_device(device_id)
+                channels = payload.get("cameras", []) or []
+                ignored = set((payload.get("device", {}) or {}).get("ignored_channels", []) or [])
+                channels = [c for c in channels if str(c.get("channel_id", "")) not in ignored]
+                channels_cache_by_chat.setdefault(message.chat.id, {})[idx] = channels
+                mode_by_chat[message.chat.id] = "channels"
+                channels_page_by_chat[message.chat.id] = 0
+                if not channels:
+                    await message.answer(
+                        "<b>CHANNELS</b>\nNo channels available (all are ignored or unavailable).",
+                        parse_mode="HTML",
+                        reply_markup=_device_menu(),
+                    )
+                else:
+                    await message.answer(
+                        format_channels(channels, page=0, page_size=CHANNELS_PAGE_SIZE),
+                        parse_mode="HTML",
+                        reply_markup=_channels_menu(channels, 0),
+                    )
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 404:
+                await message.answer(f"Device '{device_id}' not found.")
+            else:
+                await message.answer(f"Action '{action}' failed.")
+        except httpx.HTTPError:
+            await message.answer(f"Action '{action}' failed.")
+
     @router.message(Command("start"))
     async def handle_start(message: Message) -> None:
         allowed, _ = await _authorize_and_audit(message, "/start")
         if not allowed:
             return
+        if message.chat:
+            mode_by_chat[message.chat.id] = "main"
         await message.answer(
             "CCTV bot connected. Use menu buttons below.",
             reply_markup=_main_menu(),
@@ -247,6 +417,197 @@ def build_router(api_client: TelegramApiClient) -> Router:
     @router.message(F.text == "Help")
     async def handle_menu_help(message: Message) -> None:
         await handle_help(message)
+
+    @router.message(F.text == "Exit")
+    async def handle_exit_text(message: Message) -> None:
+        if message.chat:
+            mode_by_chat[message.chat.id] = "main"
+        await message.answer("Main menu", reply_markup=_main_menu())
+
+    @router.message(F.text == "Back")
+    async def handle_back_text(message: Message) -> None:
+        if message.chat is None:
+            return
+        chat_id = message.chat.id
+        mode = mode_by_chat.get(chat_id, "main")
+        if mode == "channels":
+            info = await _get_active_device(message)
+            if info is None:
+                return
+            idx, device = info
+            mode_by_chat[chat_id] = "device"
+            await message.answer(
+                f"<b>SELECTED DEVICE</b>\n{device.get('name','Unknown')}\nID: <code>{device.get('device_id','unknown')}</code>",
+                parse_mode="HTML",
+                reply_markup=_device_menu(),
+            )
+            return
+
+        if mode in ("device", "devices"):
+            devices = device_cache_by_chat.get(chat_id, [])
+            if not devices:
+                await message.answer("No device list in context. Use Devices.")
+                return
+            page = device_page_by_chat.get(chat_id, 0)
+            mode_by_chat[chat_id] = "devices"
+            await message.answer(
+                format_devices(devices, page=page, page_size=DEVICES_PAGE_SIZE),
+                parse_mode="HTML",
+                reply_markup=_devices_menu(devices, page),
+            )
+            return
+
+        await message.answer("Main menu", reply_markup=_main_menu())
+
+    @router.message(F.text == "Prev")
+    async def handle_prev_text(message: Message) -> None:
+        if message.chat is None:
+            return
+        chat_id = message.chat.id
+        mode = mode_by_chat.get(chat_id, "main")
+        if mode == "channels":
+            info = await _get_active_device(message)
+            if info is None:
+                return
+            idx, _ = info
+            channels = channels_cache_by_chat.get(chat_id, {}).get(idx, [])
+            if not channels:
+                await message.answer("No channels in context.")
+                return
+            page = max(0, channels_page_by_chat.get(chat_id, 0) - 1)
+            channels_page_by_chat[chat_id] = page
+            await message.answer(
+                format_channels(channels, page=page, page_size=CHANNELS_PAGE_SIZE),
+                parse_mode="HTML",
+                reply_markup=_channels_menu(channels, page),
+            )
+            return
+
+        if mode == "devices":
+            devices = device_cache_by_chat.get(chat_id, [])
+            if not devices:
+                await message.answer("No device list in context.")
+                return
+            page = max(0, device_page_by_chat.get(chat_id, 0) - 1)
+            device_page_by_chat[chat_id] = page
+            await message.answer(
+                format_devices(devices, page=page, page_size=DEVICES_PAGE_SIZE),
+                parse_mode="HTML",
+                reply_markup=_devices_menu(devices, page),
+            )
+
+    @router.message(F.text == "Next")
+    async def handle_next_text(message: Message) -> None:
+        if message.chat is None:
+            return
+        chat_id = message.chat.id
+        mode = mode_by_chat.get(chat_id, "main")
+        if mode == "channels":
+            info = await _get_active_device(message)
+            if info is None:
+                return
+            idx, _ = info
+            channels = channels_cache_by_chat.get(chat_id, {}).get(idx, [])
+            if not channels:
+                await message.answer("No channels in context.")
+                return
+            max_page = max(0, (len(channels) - 1) // CHANNELS_PAGE_SIZE)
+            page = min(max_page, channels_page_by_chat.get(chat_id, 0) + 1)
+            channels_page_by_chat[chat_id] = page
+            await message.answer(
+                format_channels(channels, page=page, page_size=CHANNELS_PAGE_SIZE),
+                parse_mode="HTML",
+                reply_markup=_channels_menu(channels, page),
+            )
+            return
+
+        if mode == "devices":
+            devices = device_cache_by_chat.get(chat_id, [])
+            if not devices:
+                await message.answer("No device list in context.")
+                return
+            max_page = max(0, (len(devices) - 1) // DEVICES_PAGE_SIZE)
+            page = min(max_page, device_page_by_chat.get(chat_id, 0) + 1)
+            device_page_by_chat[chat_id] = page
+            await message.answer(
+                format_devices(devices, page=page, page_size=DEVICES_PAGE_SIZE),
+                parse_mode="HTML",
+                reply_markup=_devices_menu(devices, page),
+            )
+
+    @router.message(F.text.regexp(r"^\d+\.\s"))
+    async def handle_device_select_text(message: Message) -> None:
+        if message.chat is None:
+            return
+        chat_id = message.chat.id
+        if mode_by_chat.get(chat_id) != "devices":
+            return
+        match = re.match(r"^(\d+)\.\s", message.text or "")
+        if not match:
+            return
+        idx = int(match.group(1)) - 1
+        items = device_cache_by_chat.get(chat_id, [])
+        if idx < 0 or idx >= len(items):
+            await message.answer("Invalid device selection.")
+            return
+        active_device_idx_by_chat[chat_id] = idx
+        mode_by_chat[chat_id] = "device"
+        device = items[idx]
+        await message.answer(
+            f"<b>SELECTED DEVICE</b>\n{device.get('name','Unknown')}\nID: <code>{device.get('device_id','unknown')}</code>",
+            parse_mode="HTML",
+            reply_markup=_device_menu(),
+        )
+
+    @router.message(F.text.regexp(r"^CH\s+"))
+    async def handle_channel_snapshot_text(message: Message) -> None:
+        if message.chat is None:
+            return
+        chat_id = message.chat.id
+        if mode_by_chat.get(chat_id) != "channels":
+            return
+        info = await _get_active_device(message)
+        if info is None:
+            return
+        idx, device = info
+        channel_id = (message.text or "").split(" ", 1)[1].strip()
+        channels = channels_cache_by_chat.get(chat_id, {}).get(idx, [])
+        if channels:
+            available = {str(c.get("channel_id", "")) for c in channels}
+            if channel_id not in available:
+                await message.answer("Channel is ignored or unavailable.")
+                return
+        try:
+            await message.answer("Getting snapshot...")
+            image = await api_client.get_snapshot(device.get("device_id", ""), channel_id)
+            photo = BufferedInputFile(image, filename=f"{device.get('device_id','dev')}_{channel_id}.jpg")
+            await message.answer_photo(photo=photo, caption=f"Snapshot: {device.get('device_id','')} / channel {channel_id}")
+        except httpx.HTTPError:
+            await message.answer("Failed to get snapshot.")
+
+    @router.message(F.text == "Status")
+    async def handle_status_text(message: Message) -> None:
+        await _run_device_action(message, "status")
+
+    @router.message(F.text == "Poll")
+    async def handle_poll_text(message: Message) -> None:
+        await _run_device_action(message, "poll")
+
+    @router.message(F.text == "Network")
+    async def handle_network_text(message: Message) -> None:
+        await _run_device_action(message, "network")
+
+    @router.message(F.text == "Credentials")
+    async def handle_credentials_text(message: Message) -> None:
+        await _run_device_action(message, "credentials")
+
+    @router.message(F.text == "Disks")
+    async def handle_disks_text(message: Message) -> None:
+        await _run_device_action(message, "disks")
+
+    @router.message(F.text == "Channels")
+    async def handle_channels_text(message: Message) -> None:
+        await _run_device_action(message, "channels")
 
     @router.message(Command("overview"))
     async def handle_overview(message: Message) -> None:
@@ -302,13 +663,15 @@ def build_router(api_client: TelegramApiClient) -> Router:
             payload = await api_client.list_devices(search=search, limit=30)
             if message.chat:
                 device_cache_by_chat[message.chat.id] = payload
+                mode_by_chat[message.chat.id] = "devices"
+                device_page_by_chat[message.chat.id] = 0
             if not payload:
                 await message.answer("<b>DEVICES</b>\nNo devices found.", parse_mode="HTML")
                 return
             await message.answer(
                 format_devices(payload, page=0, page_size=DEVICES_PAGE_SIZE),
                 parse_mode="HTML",
-                reply_markup=_devices_keyboard(payload, page=0),
+                reply_markup=_devices_menu(payload, page=0),
             )
         except httpx.HTTPError:
             await message.answer("Failed to fetch devices list.")
@@ -354,10 +717,17 @@ def build_router(api_client: TelegramApiClient) -> Router:
         device = items[idx]
         name = device.get("name", "Unknown")
         device_id = device.get("device_id", "unknown")
+        active_device_idx_by_chat[chat_id] = idx
+        mode_by_chat[chat_id] = "device"
         await _safe_edit_message(
             callback.message,
             f"<b>SELECTED DEVICE</b>\n{name}\nID: <code>{device_id}</code>",
             reply_markup=_device_actions_keyboard(idx),
+        )
+        await callback.message.answer(
+            f"<b>SELECTED DEVICE</b>\n{name}\nID: <code>{device_id}</code>",
+            parse_mode="HTML",
+            reply_markup=_device_menu(),
         )
         await _safe_callback_answer(callback)
 
@@ -396,6 +766,7 @@ def build_router(api_client: TelegramApiClient) -> Router:
     async def handle_home_callback(callback: CallbackQuery) -> None:
         if callback.message is None:
             return
+        mode_by_chat[callback.message.chat.id] = "main"
         await callback.message.answer("Main menu", reply_markup=_main_menu())
         await _safe_callback_answer(callback)
 
@@ -415,10 +786,17 @@ def build_router(api_client: TelegramApiClient) -> Router:
         device = items[idx]
         name = device.get("name", "Unknown")
         device_id = device.get("device_id", "unknown")
+        mode_by_chat[callback.message.chat.id] = "device"
+        active_device_idx_by_chat[callback.message.chat.id] = idx
         await _safe_edit_message(
             callback.message,
             f"<b>SELECTED DEVICE</b>\n{name}\nID: <code>{device_id}</code>",
             reply_markup=_device_actions_keyboard(idx),
+        )
+        await callback.message.answer(
+            f"<b>SELECTED DEVICE</b>\n{name}\nID: <code>{device_id}</code>",
+            parse_mode="HTML",
+            reply_markup=_device_menu(),
         )
         await _safe_callback_answer(callback)
 
