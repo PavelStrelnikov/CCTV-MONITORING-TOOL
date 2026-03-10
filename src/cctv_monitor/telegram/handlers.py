@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import httpx
 from aiogram import F, Router
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command
 from aiogram.types import (
     BufferedInputFile,
@@ -124,6 +125,13 @@ def build_router(api_client: TelegramApiClient) -> Router:
                 status=status,
             )
         except httpx.HTTPError:
+            pass
+
+    async def _safe_callback_answer(callback: CallbackQuery, *args, **kwargs) -> None:
+        try:
+            await callback.answer(*args, **kwargs)
+        except TelegramBadRequest:
+            # Query can expire if handler spends too long before answering.
             pass
 
     async def _authorize_and_audit(message: Message, command: str) -> tuple[bool, str | None]:
@@ -282,10 +290,10 @@ def build_router(api_client: TelegramApiClient) -> Router:
         try:
             idx = int((callback.data or "").split(":", 1)[1])
         except (ValueError, IndexError):
-            await callback.answer("Invalid selection", show_alert=True)
+            await _safe_callback_answer(callback, "Invalid selection", show_alert=True)
             return
         if idx < 0 or idx >= len(items):
-            await callback.answer("Device list expired. Run /devices again.", show_alert=True)
+            await _safe_callback_answer(callback, "Device list expired. Run /devices again.", show_alert=True)
             return
         device = items[idx]
         name = device.get("name", "Unknown")
@@ -294,7 +302,7 @@ def build_router(api_client: TelegramApiClient) -> Router:
             f"Selected: {name} ({device_id})",
             reply_markup=_device_actions_keyboard(idx),
         )
-        await callback.answer()
+        await _safe_callback_answer(callback)
 
     @router.callback_query(F.data.startswith("devstatus:"))
     async def handle_device_status_callback(callback: CallbackQuery) -> None:
@@ -305,22 +313,22 @@ def build_router(api_client: TelegramApiClient) -> Router:
         try:
             idx = int((callback.data or "").split(":", 1)[1])
         except (ValueError, IndexError):
-            await callback.answer("Invalid action", show_alert=True)
+            await _safe_callback_answer(callback, "Invalid action", show_alert=True)
             return
         if idx < 0 or idx >= len(items):
-            await callback.answer("Device list expired. Run /devices again.", show_alert=True)
+            await _safe_callback_answer(callback, "Device list expired. Run /devices again.", show_alert=True)
             return
 
         allowed, _ = await get_access(api_client, callback.from_user.id)
         if not allowed:
             await _log_callback(callback, "devstatus", "denied")
-            await callback.answer("Access denied", show_alert=True)
+            await _safe_callback_answer(callback, "Access denied", show_alert=True)
             return
         await _log_callback(callback, "devstatus", "ok")
 
         device_id = items[idx].get("device_id", "")
         if not device_id:
-            await callback.answer("Invalid device", show_alert=True)
+            await _safe_callback_answer(callback, "Invalid device", show_alert=True)
             return
 
         try:
@@ -333,7 +341,7 @@ def build_router(api_client: TelegramApiClient) -> Router:
                 await callback.message.answer("Failed to fetch device details.")
         except httpx.HTTPError:
             await callback.message.answer("Failed to fetch device details.")
-        await callback.answer()
+        await _safe_callback_answer(callback)
 
     @router.callback_query(F.data.startswith("devpoll:"))
     async def handle_device_poll_callback(callback: CallbackQuery) -> None:
@@ -344,26 +352,27 @@ def build_router(api_client: TelegramApiClient) -> Router:
         try:
             idx = int((callback.data or "").split(":", 1)[1])
         except (ValueError, IndexError):
-            await callback.answer("Invalid action", show_alert=True)
+            await _safe_callback_answer(callback, "Invalid action", show_alert=True)
             return
         if idx < 0 or idx >= len(items):
-            await callback.answer("Device list expired. Run /devices again.", show_alert=True)
+            await _safe_callback_answer(callback, "Device list expired. Run /devices again.", show_alert=True)
             return
 
         allowed, role = await get_access(api_client, callback.from_user.id)
         if not allowed:
             await _log_callback(callback, "devpoll", "denied")
-            await callback.answer("Access denied", show_alert=True)
+            await _safe_callback_answer(callback, "Access denied", show_alert=True)
             return
         if role not in ("operator", "admin"):
             await _log_callback(callback, "devpoll", "denied")
-            await callback.answer("Insufficient role for poll", show_alert=True)
+            await _safe_callback_answer(callback, "Insufficient role for poll", show_alert=True)
             return
         await _log_callback(callback, "devpoll", "ok")
+        await _safe_callback_answer(callback, "Polling started...")
 
         device_id = items[idx].get("device_id", "")
         if not device_id:
-            await callback.answer("Invalid device", show_alert=True)
+            await _safe_callback_answer(callback, "Invalid device", show_alert=True)
             return
 
         try:
@@ -376,7 +385,7 @@ def build_router(api_client: TelegramApiClient) -> Router:
                 await callback.message.answer("Poll failed.")
         except httpx.HTTPError:
             await callback.message.answer("Poll failed.")
-        await callback.answer()
+        return
 
     @router.callback_query(F.data.startswith("devnet:"))
     async def handle_device_network_callback(callback: CallbackQuery) -> None:
@@ -387,15 +396,15 @@ def build_router(api_client: TelegramApiClient) -> Router:
         try:
             idx = int((callback.data or "").split(":", 1)[1])
         except (ValueError, IndexError):
-            await callback.answer("Invalid action", show_alert=True)
+            await _safe_callback_answer(callback, "Invalid action", show_alert=True)
             return
         if idx < 0 or idx >= len(items):
-            await callback.answer("Device list expired. Run /devices again.", show_alert=True)
+            await _safe_callback_answer(callback, "Device list expired. Run /devices again.", show_alert=True)
             return
         allowed, _ = await get_access(api_client, callback.from_user.id)
         if not allowed:
             await _log_callback(callback, "devnet", "denied")
-            await callback.answer("Access denied", show_alert=True)
+            await _safe_callback_answer(callback, "Access denied", show_alert=True)
             return
         await _log_callback(callback, "devnet", "ok")
 
@@ -405,7 +414,7 @@ def build_router(api_client: TelegramApiClient) -> Router:
             await callback.message.answer(format_network_info(payload), parse_mode="HTML")
         except httpx.HTTPError:
             await callback.message.answer("Failed to fetch network details.")
-        await callback.answer()
+        await _safe_callback_answer(callback)
 
     @router.callback_query(F.data.startswith("devcred:"))
     async def handle_device_credentials_callback(callback: CallbackQuery) -> None:
@@ -416,20 +425,20 @@ def build_router(api_client: TelegramApiClient) -> Router:
         try:
             idx = int((callback.data or "").split(":", 1)[1])
         except (ValueError, IndexError):
-            await callback.answer("Invalid action", show_alert=True)
+            await _safe_callback_answer(callback, "Invalid action", show_alert=True)
             return
         if idx < 0 or idx >= len(items):
-            await callback.answer("Device list expired. Run /devices again.", show_alert=True)
+            await _safe_callback_answer(callback, "Device list expired. Run /devices again.", show_alert=True)
             return
 
         allowed, role = await get_access(api_client, callback.from_user.id)
         if not allowed:
             await _log_callback(callback, "devcred", "denied")
-            await callback.answer("Access denied", show_alert=True)
+            await _safe_callback_answer(callback, "Access denied", show_alert=True)
             return
         if role != "admin":
             await _log_callback(callback, "devcred", "denied")
-            await callback.answer("Credentials are available for admin only", show_alert=True)
+            await _safe_callback_answer(callback, "Credentials are available for admin only", show_alert=True)
             return
         await _log_callback(callback, "devcred", "ok")
 
@@ -439,7 +448,7 @@ def build_router(api_client: TelegramApiClient) -> Router:
             await callback.message.answer(format_credentials(payload), parse_mode="HTML")
         except httpx.HTTPError:
             await callback.message.answer("Failed to fetch credentials.")
-        await callback.answer()
+        await _safe_callback_answer(callback)
 
     @router.callback_query(F.data.startswith("devdisks:"))
     async def handle_device_disks_callback(callback: CallbackQuery) -> None:
@@ -450,15 +459,15 @@ def build_router(api_client: TelegramApiClient) -> Router:
         try:
             idx = int((callback.data or "").split(":", 1)[1])
         except (ValueError, IndexError):
-            await callback.answer("Invalid action", show_alert=True)
+            await _safe_callback_answer(callback, "Invalid action", show_alert=True)
             return
         if idx < 0 or idx >= len(items):
-            await callback.answer("Device list expired. Run /devices again.", show_alert=True)
+            await _safe_callback_answer(callback, "Device list expired. Run /devices again.", show_alert=True)
             return
         allowed, _ = await get_access(api_client, callback.from_user.id)
         if not allowed:
             await _log_callback(callback, "devdisks", "denied")
-            await callback.answer("Access denied", show_alert=True)
+            await _safe_callback_answer(callback, "Access denied", show_alert=True)
             return
         await _log_callback(callback, "devdisks", "ok")
 
@@ -468,7 +477,7 @@ def build_router(api_client: TelegramApiClient) -> Router:
             await callback.message.answer(format_disks(payload), parse_mode="HTML")
         except httpx.HTTPError:
             await callback.message.answer("Failed to fetch disk status.")
-        await callback.answer()
+        await _safe_callback_answer(callback)
 
     @router.callback_query(F.data.startswith("devchannels:"))
     async def handle_device_channels_callback(callback: CallbackQuery) -> None:
@@ -479,15 +488,15 @@ def build_router(api_client: TelegramApiClient) -> Router:
         try:
             idx = int((callback.data or "").split(":", 1)[1])
         except (ValueError, IndexError):
-            await callback.answer("Invalid action", show_alert=True)
+            await _safe_callback_answer(callback, "Invalid action", show_alert=True)
             return
         if idx < 0 or idx >= len(items):
-            await callback.answer("Device list expired. Run /devices again.", show_alert=True)
+            await _safe_callback_answer(callback, "Device list expired. Run /devices again.", show_alert=True)
             return
         allowed, _ = await get_access(api_client, callback.from_user.id)
         if not allowed:
             await _log_callback(callback, "devchannels", "denied")
-            await callback.answer("Access denied", show_alert=True)
+            await _safe_callback_answer(callback, "Access denied", show_alert=True)
             return
         await _log_callback(callback, "devchannels", "ok")
 
@@ -507,7 +516,7 @@ def build_router(api_client: TelegramApiClient) -> Router:
                 await callback.message.answer("No channels available (all are ignored or unavailable).")
         except httpx.HTTPError:
             await callback.message.answer("Failed to fetch channels.")
-        await callback.answer()
+        await _safe_callback_answer(callback)
 
     @router.callback_query(F.data.startswith("chpage:"))
     async def handle_channels_page_callback(callback: CallbackQuery) -> None:
@@ -518,18 +527,18 @@ def build_router(api_client: TelegramApiClient) -> Router:
             idx = int(idx_raw)
             page = int(page_raw)
         except (ValueError, IndexError):
-            await callback.answer("Invalid action", show_alert=True)
+            await _safe_callback_answer(callback, "Invalid action", show_alert=True)
             return
 
         allowed, _ = await get_access(api_client, callback.from_user.id)
         if not allowed:
             await _log_callback(callback, "chpage", "denied")
-            await callback.answer("Access denied", show_alert=True)
+            await _safe_callback_answer(callback, "Access denied", show_alert=True)
             return
         await _log_callback(callback, "chpage", "ok")
 
         await _show_channels_page(callback, idx, page)
-        await callback.answer()
+        await _safe_callback_answer(callback)
 
     @router.callback_query(F.data.startswith("chsnap:"))
     async def handle_channel_snapshot_callback(callback: CallbackQuery) -> None:
@@ -541,24 +550,25 @@ def build_router(api_client: TelegramApiClient) -> Router:
             _, idx_raw, channel_id = (callback.data or "").split(":", 2)
             idx = int(idx_raw)
         except (ValueError, IndexError):
-            await callback.answer("Invalid action", show_alert=True)
+            await _safe_callback_answer(callback, "Invalid action", show_alert=True)
             return
         if idx < 0 or idx >= len(items):
-            await callback.answer("Device list expired. Run /devices again.", show_alert=True)
+            await _safe_callback_answer(callback, "Device list expired. Run /devices again.", show_alert=True)
             return
         allowed, _ = await get_access(api_client, callback.from_user.id)
         if not allowed:
             await _log_callback(callback, "chsnap", "denied")
-            await callback.answer("Access denied", show_alert=True)
+            await _safe_callback_answer(callback, "Access denied", show_alert=True)
             return
         await _log_callback(callback, "chsnap", "ok")
+        await _safe_callback_answer(callback, "Getting snapshot...")
 
         device_id = items[idx].get("device_id", "")
         channels = channels_cache_by_chat.get(chat_id, {}).get(idx, [])
         if channels:
             available = {str(c.get("channel_id", "")) for c in channels}
             if str(channel_id) not in available:
-                await callback.answer("Channel is ignored or unavailable.", show_alert=True)
+                await _safe_callback_answer(callback, "Channel is ignored or unavailable.", show_alert=True)
                 return
         try:
             image = await api_client.get_snapshot(device_id, channel_id)
@@ -571,6 +581,8 @@ def build_router(api_client: TelegramApiClient) -> Router:
                 await callback.message.answer("Failed to get snapshot.")
         except httpx.HTTPError:
             await callback.message.answer("Failed to get snapshot.")
-        await callback.answer()
+        return
 
     return router
+
+
