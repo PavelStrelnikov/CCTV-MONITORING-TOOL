@@ -41,7 +41,12 @@ export default function Dashboard() {
   const [error, setError] = useState('');
   const [page, setPage] = useState(0);
   const rowsPerPage = 10;
-  const [drillDown, setDrillDown] = useState<{ title: string; items: { device: OverviewDeviceSummary; detail: string }[] } | null>(null);
+  const [drillDown, setDrillDown] = useState<{
+    title: string;
+    accent: string;
+    icon: React.ReactNode;
+    items: { device: OverviewDeviceSummary; detail: string; severity: 'error' | 'warning' }[];
+  } | null>(null);
 
   const fetchData = async () => {
     try {
@@ -84,8 +89,14 @@ export default function Dashboard() {
     const items = ov.devices.filter(d => !d.reachable).map(d => ({
       device: d,
       detail: d.last_poll_at ? `Last poll: ${timeAgo(d.last_poll_at)}` : 'Never polled',
+      severity: 'error' as const,
     }));
-    if (items.length > 0) setDrillDown({ title: t('dashboard.offlineDevices', 'Offline Devices'), items });
+    if (items.length > 0) setDrillDown({
+      title: t('dashboard.offlineDevices', 'Offline Devices'),
+      accent: '#EF4444',
+      icon: <DevicesIcon />,
+      items,
+    });
   };
 
   const showOfflineCameras = () => {
@@ -94,8 +105,14 @@ export default function Dashboard() {
       .map(d => ({
         device: d,
         detail: `${d.offline_cameras} offline / ${d.camera_count} total`,
+        severity: 'warning' as const,
       }));
-    if (items.length > 0) setDrillDown({ title: t('dashboard.offlineCameras', 'Offline Cameras'), items });
+    if (items.length > 0) setDrillDown({
+      title: t('dashboard.offlineCameras', 'Offline Cameras'),
+      accent: '#F59E0B',
+      icon: <VideocamIcon />,
+      items,
+    });
   };
 
   const showDiskProblems = () => {
@@ -104,8 +121,14 @@ export default function Dashboard() {
       .map(d => ({
         device: d,
         detail: t('dashboard.diskError', 'Disk error'),
+        severity: 'error' as const,
       }));
-    if (items.length > 0) setDrillDown({ title: t('dashboard.diskProblems', 'Disk Problems'), items });
+    if (items.length > 0) setDrillDown({
+      title: t('dashboard.diskProblems', 'Disk Problems'),
+      accent: '#EF4444',
+      icon: <StorageIcon />,
+      items,
+    });
   };
 
   const showRecordingProblems = () => {
@@ -114,8 +137,14 @@ export default function Dashboard() {
       .map(d => ({
         device: d,
         detail: `${d.recording_total - d.recording_ok} not recording / ${d.recording_total} total`,
+        severity: 'warning' as const,
       }));
-    if (items.length > 0) setDrillDown({ title: t('dashboard.recordingProblems', 'Recording Problems'), items });
+    if (items.length > 0) setDrillDown({
+      title: t('dashboard.recordingProblems', 'Recording Problems'),
+      accent: '#F59E0B',
+      icon: <FiberManualRecordIcon />,
+      items,
+    });
   };
 
   const showTimeDriftProblems = () => {
@@ -125,9 +154,14 @@ export default function Dashboard() {
         const drift = d.time_drift!;
         const abs = Math.abs(drift);
         const label = abs < 60 ? `${drift}s` : abs < 3600 ? `${Math.round(drift / 60)}min` : `${(drift / 3600).toFixed(1)}h`;
-        return { device: d, detail: `Drift: ${drift > 0 ? '+' : ''}${label}` };
+        return { device: d, detail: `Drift: ${drift > 0 ? '+' : ''}${label}`, severity: 'warning' as const };
       });
-    if (items.length > 0) setDrillDown({ title: t('dashboard.timeDriftProblems', 'Time Drift Problems'), items });
+    if (items.length > 0) setDrillDown({
+      title: t('dashboard.timeDriftProblems', 'Time Drift Problems'),
+      accent: '#F59E0B',
+      icon: <AccessTimeIcon />,
+      items,
+    });
   };
 
   // Stat cards - row 1: devices & cameras
@@ -407,18 +441,60 @@ export default function Dashboard() {
       <Dialog open={!!drillDown} onClose={() => setDrillDown(null)} maxWidth="sm" fullWidth>
         {drillDown && (
           <>
-            <DialogTitle>{drillDown.title}</DialogTitle>
-            <DialogContent>
+            <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1.5, borderBottom: 1, borderColor: 'divider', pb: 1.5 }}>
+              <Box sx={{ color: drillDown.accent, display: 'flex' }}>{drillDown.icon}</Box>
+              <Typography variant="h6" component="span">{drillDown.title}</Typography>
+              <Chip
+                label={drillDown.items.length}
+                size="small"
+                sx={{ ml: 'auto', bgcolor: drillDown.accent + '22', color: drillDown.accent, fontWeight: 700 }}
+              />
+            </DialogTitle>
+            <DialogContent sx={{ p: 0 }}>
               <List disablePadding>
-                {drillDown.items.map(({ device: dev, detail }) => (
-                  <ListItem key={dev.device_id} divider sx={{ px: 0 }}>
+                {drillDown.items.map(({ device: dev, detail, severity }, idx) => (
+                  <ListItem
+                    key={dev.device_id}
+                    divider={idx < drillDown.items.length - 1}
+                    component={RouterLink}
+                    to={`/devices/${dev.device_id}`}
+                    onClick={() => setDrillDown(null)}
+                    sx={{
+                      px: 2.5,
+                      py: 1.5,
+                      textDecoration: 'none',
+                      color: 'inherit',
+                      cursor: 'pointer',
+                      borderInlineStart: `3px solid ${severity === 'error' ? '#EF4444' : '#F59E0B'}`,
+                      transition: 'background-color 0.15s',
+                      '&:hover': { bgcolor: 'action.hover' },
+                    }}
+                  >
                     <ListItemText
                       primary={
-                        <Link component={RouterLink} to={`/devices/${dev.device_id}`} underline="hover" onClick={() => setDrillDown(null)}>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
                           {dev.name}
-                        </Link>
+                        </Typography>
                       }
-                      secondary={detail}
+                      secondary={
+                        <Box display="flex" alignItems="center" gap={1} mt={0.25}>
+                          <Typography variant="caption" color="text.secondary">
+                            {detail}
+                          </Typography>
+                          {dev.last_poll_at && (
+                            <Typography variant="caption" color="text.disabled">
+                              {timeAgo(dev.last_poll_at)}
+                            </Typography>
+                          )}
+                        </Box>
+                      }
+                    />
+                    <Chip
+                      label={severity === 'error' ? t('status.error', 'Error') : t('status.warning', 'Warning')}
+                      size="small"
+                      color={severity}
+                      variant="outlined"
+                      sx={{ height: 22, fontSize: 11 }}
                     />
                   </ListItem>
                 ))}
