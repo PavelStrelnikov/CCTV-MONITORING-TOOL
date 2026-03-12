@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate, Link as RouterLink } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import Box from '@mui/material/Box';
@@ -33,6 +33,7 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import { DataGrid, type GridColDef } from '@mui/x-data-grid';
 import { LineChart } from '@mui/x-charts/LineChart';
 import NetworkCheckIcon from '@mui/icons-material/NetworkCheck';
+import RefreshIcon from '@mui/icons-material/Refresh';
 import { api } from '../api/client.ts';
 import { timeAgo, formatBytes } from '../utils/formatTime.ts';
 import { getDataGridSx, useThemeMode } from '../theme.ts';
@@ -54,11 +55,13 @@ function TabPanel(props: { children: React.ReactNode; value: number; index: numb
 }
 
 // ---------- Camera card ----------
-function CameraCard({ cam, ignored, onToggleIgnore, snapshotUrl, t, lazySnapshot = false }: {
+function CameraCard({ cam, ignored, onToggleIgnore, snapshotUrl, cachedUrl, onLoaded, t, lazySnapshot = false }: {
   cam: CameraChannel;
   ignored: boolean;
   onToggleIgnore: (channelId: string) => void;
   snapshotUrl: string;
+  cachedUrl?: string;
+  onLoaded?: (channelId: string, blobUrl: string) => void;
   t: (key: string) => string;
   lazySnapshot?: boolean;
 }) {
@@ -66,6 +69,9 @@ function CameraCard({ cam, ignored, onToggleIgnore, snapshotUrl, t, lazySnapshot
   const [fullscreen, setFullscreen] = useState(false);
   const [imgError, setImgError] = useState(false);
   const [snapshotEnabled, setSnapshotEnabled] = useState(!lazySnapshot);
+
+  const displayUrl = cachedUrl || snapshotUrl;
+  const imgRef = useRef<HTMLImageElement>(null);
 
   const borderColor = ignored
     ? '#475569'
@@ -127,8 +133,30 @@ function CameraCard({ cam, ignored, onToggleIgnore, snapshotUrl, t, lazySnapshot
           >
             <Box
               component="img"
-              src={snapshotUrl}
+              ref={imgRef}
+              src={displayUrl}
               loading="lazy"
+              onLoad={() => {
+                if (!cachedUrl && onLoaded && imgRef.current) {
+                  // Cache as blob URL on first network load
+                  const img = imgRef.current;
+                  try {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = img.naturalWidth;
+                    canvas.height = img.naturalHeight;
+                    const ctx = canvas.getContext('2d');
+                    if (ctx) {
+                      ctx.drawImage(img, 0, 0);
+                      canvas.toBlob((blob) => {
+                        if (blob) {
+                          const url = URL.createObjectURL(blob);
+                          onLoaded(cam.channel_id, url);
+                        }
+                      }, 'image/jpeg');
+                    }
+                  } catch { /* cross-origin — skip caching */ }
+                }
+              }}
               onError={() => setImgError(true)}
               sx={{
                 width: '100%',
@@ -227,7 +255,7 @@ function CameraCard({ cam, ignored, onToggleIgnore, snapshotUrl, t, lazySnapshot
         >
           <Box
             component="img"
-            src={snapshotUrl}
+            src={displayUrl}
             sx={{
               display: 'block',
               maxWidth: '90vw',
@@ -275,9 +303,24 @@ export default function DeviceDetail() {
   const [tab, setTab] = useState(0);
   const [ignoredChannels, setIgnoredChannels] = useState<Set<string>>(new Set());
 
-  // Snapshot pagination
+  // Snapshot pagination & cache
   const SNAPSHOT_PAGE_SIZE = 16;
   const [snapshotPage, setSnapshotPage] = useState(1);
+  const [snapshotEpoch, setSnapshotEpoch] = useState(0);
+  const snapshotCacheRef = useRef<Map<string, string>>(new Map());
+
+  const handleSnapshotLoaded = useCallback((channelId: string, blobUrl: string) => {
+    const old = snapshotCacheRef.current.get(channelId);
+    if (old) URL.revokeObjectURL(old);
+    snapshotCacheRef.current.set(channelId, blobUrl);
+  }, []);
+
+  const handleRefreshSnapshots = useCallback(() => {
+    // Revoke all cached blob URLs and bump epoch to force re-fetch
+    snapshotCacheRef.current.forEach((url) => URL.revokeObjectURL(url));
+    snapshotCacheRef.current.clear();
+    setSnapshotEpoch(e => e + 1);
+  }, []);
 
   // Tags
   const [tagInput, setTagInput] = useState('');
@@ -298,6 +341,9 @@ export default function DeviceDetail() {
   useEffect(() => {
     if (!deviceId) return;
     setSnapshotPage(1);
+    snapshotCacheRef.current.forEach((url) => URL.revokeObjectURL(url));
+    snapshotCacheRef.current.clear();
+    setSnapshotEpoch(0);
     api
       .getDeviceDetail(deviceId)
       .then((d) => {
@@ -735,18 +781,20 @@ export default function DeviceDetail() {
                   >
                     {pagedCameras.map((c) => (
                       <CameraCard
-                        key={c.channel_id}
+                        key={`${c.channel_id}-${snapshotEpoch}`}
                         cam={c}
                         ignored={ignoredChannels.has(c.channel_id)}
                         onToggleIgnore={handleToggleIgnore}
                         snapshotUrl={api.getSnapshotUrl(deviceId!, c.channel_id)}
+                        cachedUrl={snapshotCacheRef.current.get(c.channel_id)}
+                        onLoaded={handleSnapshotLoaded}
                         t={t}
                         lazySnapshot={isLegacySnapshotModel}
                       />
                     ))}
                   </Box>
-                  {totalSnapshotPages > 1 && (
-                    <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 2, mt: 2 }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 2, mt: 2 }}>
+                    {totalSnapshotPages > 1 && (
                       <Button
                         size="small"
                         disabled={effectivePage <= 1}
@@ -754,9 +802,13 @@ export default function DeviceDetail() {
                       >
                         {t('common.back', '← Back')}
                       </Button>
+                    )}
+                    {totalSnapshotPages > 1 && (
                       <Typography variant="body2">
                         {effectivePage} / {totalSnapshotPages}
                       </Typography>
+                    )}
+                    {totalSnapshotPages > 1 && (
                       <Button
                         size="small"
                         disabled={effectivePage >= totalSnapshotPages}
@@ -764,8 +816,13 @@ export default function DeviceDetail() {
                       >
                         {t('common.next', 'Next →')}
                       </Button>
-                    </Box>
-                  )}
+                    )}
+                    <Tooltip title={t('deviceDetail.refreshSnapshots', 'Refresh snapshots')}>
+                      <IconButton size="small" onClick={handleRefreshSnapshots}>
+                        <RefreshIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  </Box>
                 </>
               );
             })()}
