@@ -593,81 +593,122 @@ export default function DeviceDetail() {
             <Chip label={statusLabel} color={statusColor} />
           </Box>
 
-          {/* Info grid */}
+          {/* Info grid — two columns on wider screens */}
           <Box
             sx={{
               display: 'grid',
-              gridTemplateColumns: 'auto 1fr',
-              gap: '2px 16px',
-              fontSize: 14,
-              '& .label': { color: 'text.secondary', fontWeight: 500, whiteSpace: 'nowrap' },
-              '& .value': { fontFamily: 'monospace' },
+              gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' },
+              gap: { xs: 0, md: 4 },
             }}
           >
-            {(device.model || device.vendor) && (
-              <>
-                <Typography variant="body2" className="label">{t('deviceDetail.model')}</Typography>
-                <Typography variant="body2" className="value">
-                  {[device.vendor, device.model].filter(Boolean).join(' ')}
-                  {device.firmware_version ? ` (v${device.firmware_version})` : ''}
-                </Typography>
-              </>
-            )}
-            {device.serial_number && (
-              <>
-                <Typography variant="body2" className="label">{t('deviceDetail.serialNumber')}</Typography>
-                <Typography variant="body2" className="value">{device.serial_number}</Typography>
-              </>
-            )}
-            <Typography variant="body2" className="label">{t('deviceDetail.address')}</Typography>
-            <Typography variant="body2" className="value">
-              {device.host}
-              {device.web_port ? `:${device.web_port}` : ''}
-              {device.sdk_port ? ` (SDK: ${device.sdk_port})` : ''}
-            </Typography>
-
-            <Typography variant="body2" className="label">{t('deviceDetail.transport')}</Typography>
-            <Typography variant="body2" className="value" sx={{ textTransform: 'uppercase' }}>
-              {device.transport_mode}
-            </Typography>
-
-            {device.last_poll_at && (
-              <>
-                <Typography variant="body2" className="label">{t('deviceDetail.lastPoll')}</Typography>
-                <Typography variant="body2" className="value">{timeAgo(device.last_poll_at)}</Typography>
-              </>
-            )}
-
-            {/* Credentials row */}
-            <Typography variant="body2" className="label">{t('deviceDetail.credentials')}</Typography>
-            <Box display="flex" alignItems="center" gap={0.5}>
-              {showPassword && credentials ? (
+            {/* Left column */}
+            <Box
+              sx={{
+                display: 'grid',
+                gridTemplateColumns: 'auto 1fr',
+                gap: '2px 16px',
+                fontSize: 14,
+                alignContent: 'start',
+                '& .label': { color: 'text.secondary', fontWeight: 500, whiteSpace: 'nowrap' },
+                '& .value': { fontFamily: 'monospace' },
+              }}
+            >
+              {(device.model || device.vendor) && (
                 <>
+                  <Typography variant="body2" className="label">{t('deviceDetail.model')}</Typography>
                   <Typography variant="body2" className="value">
-                    {credentials.username} / {credentials.password}
+                    {[device.vendor, device.model].filter(Boolean).join(' ')}
+                    {device.firmware_version ? ` (v${device.firmware_version})` : ''}
                   </Typography>
-                  <Tooltip title={t('deviceDetail.copyPassword')}>
-                    <IconButton size="small" onClick={() => handleCopy(credentials.password)} sx={{ p: 0.25 }}>
-                      <ContentCopyIcon sx={{ fontSize: 14 }} />
-                    </IconButton>
-                  </Tooltip>
                 </>
-              ) : (
-                <Typography variant="body2" className="value" color="text.disabled">
-                  ••••••••
-                </Typography>
               )}
-              <Tooltip title={showPassword ? t('deviceDetail.hideCreds') : t('deviceDetail.showCreds')}>
-                <IconButton size="small" onClick={handleShowCredentials} disabled={loadingCreds} sx={{ p: 0.25 }}>
-                  {loadingCreds ? (
-                    <CircularProgress size={14} />
-                  ) : showPassword ? (
-                    <VisibilityOffIcon sx={{ fontSize: 16 }} />
-                  ) : (
-                    <VisibilityIcon sx={{ fontSize: 16 }} />
-                  )}
-                </IconButton>
-              </Tooltip>
+              {device.serial_number && (
+                <>
+                  <Typography variant="body2" className="label">{t('deviceDetail.serialNumber')}</Typography>
+                  <Typography variant="body2" className="value">{device.serial_number}</Typography>
+                </>
+              )}
+              <Typography variant="body2" className="label">{t('deviceDetail.address')}</Typography>
+              <Box className="value" display="flex" alignItems="center" gap={0.5}>
+                {device.web_port ? (
+                  <Typography
+                    variant="body2"
+                    component="a"
+                    href={`http://${device.host}:${device.web_port}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    sx={{ fontFamily: 'monospace', color: 'primary.main', textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}
+                  >
+                    {device.host}:{device.web_port}
+                  </Typography>
+                ) : (
+                  <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
+                    {device.host}
+                  </Typography>
+                )}
+                {device.sdk_port && (
+                  <Typography variant="body2" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
+                    (SDK: {device.sdk_port})
+                  </Typography>
+                )}
+              </Box>
+            </Box>
+
+            {/* Right column */}
+            <Box
+              sx={{
+                display: 'grid',
+                gridTemplateColumns: 'auto 1fr',
+                gap: '2px 16px',
+                fontSize: 14,
+                alignContent: 'start',
+                '& .label': { color: 'text.secondary', fontWeight: 500, whiteSpace: 'nowrap' },
+                '& .value': { fontFamily: 'monospace' },
+              }}
+            >
+              <Typography variant="body2" className="label">{t('deviceDetail.transport')}</Typography>
+              <Typography variant="body2" className="value" sx={{ textTransform: 'uppercase' }}>
+                {device.transport_mode}
+              </Typography>
+
+              {device.last_poll_at && (
+                <>
+                  <Typography variant="body2" className="label">{t('deviceDetail.lastPoll')}</Typography>
+                  <Typography variant="body2" className="value">{timeAgo(device.last_poll_at)}</Typography>
+                </>
+              )}
+
+              {/* Credentials row */}
+              <Typography variant="body2" className="label">{t('deviceDetail.credentials')}</Typography>
+              <Box display="flex" alignItems="center" gap={0.5}>
+                {showPassword && credentials ? (
+                  <>
+                    <Typography variant="body2" className="value">
+                      {credentials.username} / {credentials.password}
+                    </Typography>
+                    <Tooltip title={t('deviceDetail.copyPassword')}>
+                      <IconButton size="small" onClick={() => handleCopy(credentials.password)} sx={{ p: 0.25 }}>
+                        <ContentCopyIcon sx={{ fontSize: 14 }} />
+                      </IconButton>
+                    </Tooltip>
+                  </>
+                ) : (
+                  <Typography variant="body2" className="value" color="text.disabled">
+                    ••••••••
+                  </Typography>
+                )}
+                <Tooltip title={showPassword ? t('deviceDetail.hideCreds') : t('deviceDetail.showCreds')}>
+                  <IconButton size="small" onClick={handleShowCredentials} disabled={loadingCreds} sx={{ p: 0.25 }}>
+                    {loadingCreds ? (
+                      <CircularProgress size={14} />
+                    ) : showPassword ? (
+                      <VisibilityOffIcon sx={{ fontSize: 16 }} />
+                    ) : (
+                      <VisibilityIcon sx={{ fontSize: 16 }} />
+                    )}
+                  </IconButton>
+                </Tooltip>
+              </Box>
             </Box>
           </Box>
 
