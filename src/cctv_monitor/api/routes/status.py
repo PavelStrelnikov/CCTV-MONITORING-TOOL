@@ -43,22 +43,36 @@ async def get_overview(session: AsyncSession = Depends(get_session)):
             if c.get("channel_id") not in ignored
         ]
         dev_cam_count = len(monitored_cameras)
-        dev_online = sum(
-            1 for c in monitored_cameras
-            if c.get("status", "").lower() == "online"
-        )
-        dev_offline = dev_cam_count - dev_online
+
+        if is_reachable:
+            # Only count camera/disk/recording stats for reachable devices
+            dev_online = sum(
+                1 for c in monitored_cameras
+                if c.get("status", "").lower() == "online"
+            )
+            dev_offline = dev_cam_count - dev_online
+        else:
+            # Unreachable — we can't know actual camera/disk state
+            dev_online = 0
+            dev_offline = 0
+
         total_cameras += dev_cam_count
         online_cameras += dev_online
         offline_cameras += dev_offline
 
         # Disks
         dev_disk_count = len(disks_data)
-        dev_disks_ok = sum(
-            1 for dk in disks_data
-            if dk.get("status", "").lower() in ("ok", "normal")
-        )
-        dev_disks_err = dev_disk_count - dev_disks_ok
+        if is_reachable:
+            dev_disks_ok = sum(
+                1 for dk in disks_data
+                if dk.get("status", "").lower() in ("ok", "normal")
+            )
+            dev_disks_err = dev_disk_count - dev_disks_ok
+        else:
+            # Unreachable — don't report disk errors from stale data
+            dev_disks_ok = 0
+            dev_disks_err = 0
+
         total_disks += dev_disk_count
         disks_ok_count += dev_disks_ok
         disks_error_count += dev_disks_err
@@ -66,12 +80,13 @@ async def get_overview(session: AsyncSession = Depends(get_session)):
         # Recordings (exclude ignored channels)
         dev_rec_total = 0
         dev_rec_ok = 0
-        for c in monitored_cameras:
-            rec = c.get("recording")
-            if rec is not None:
-                dev_rec_total += 1
-                if rec == "recording":
-                    dev_rec_ok += 1
+        if is_reachable:
+            for c in monitored_cameras:
+                rec = c.get("recording")
+                if rec is not None:
+                    dev_rec_total += 1
+                    if rec == "recording":
+                        dev_rec_ok += 1
         recording_total += dev_rec_total
         recording_ok += dev_rec_ok
 
@@ -80,8 +95,14 @@ async def get_overview(session: AsyncSession = Depends(get_session)):
         dev_drift: int | None = None
         if time_check and time_check.get("drift_seconds") is not None:
             dev_drift = time_check["drift_seconds"]
-            if abs(dev_drift) > 300:
+            if is_reachable and abs(dev_drift) > 300:
                 time_drift_issues += 1
+
+        # For unreachable devices: disk_ok = None (unknown), not False
+        if is_reachable:
+            dev_disk_ok = dev_disks_err == 0 if dev_disk_count > 0 else True
+        else:
+            dev_disk_ok = True  # unknown — don't flag as error
 
         device_summaries.append(OverviewDeviceSummary(
             device_id=d.device_id,
@@ -90,7 +111,7 @@ async def get_overview(session: AsyncSession = Depends(get_session)):
             camera_count=dev_cam_count,
             online_cameras=dev_online,
             offline_cameras=dev_offline,
-            disk_ok=dev_disks_err == 0 if dev_disk_count > 0 else True,
+            disk_ok=dev_disk_ok,
             recording_total=dev_rec_total,
             recording_ok=dev_rec_ok,
             time_drift=dev_drift,
