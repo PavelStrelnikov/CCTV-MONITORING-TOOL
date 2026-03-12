@@ -34,6 +34,7 @@ import { DataGrid, type GridColDef } from '@mui/x-data-grid';
 import { LineChart } from '@mui/x-charts/LineChart';
 import NetworkCheckIcon from '@mui/icons-material/NetworkCheck';
 import RefreshIcon from '@mui/icons-material/Refresh';
+import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import { api } from '../api/client.ts';
 import { timeAgo, formatBytes } from '../utils/formatTime.ts';
 import { getDataGridSx, useThemeMode } from '../theme.ts';
@@ -303,6 +304,14 @@ export default function DeviceDetail() {
   const [tab, setTab] = useState(0);
   const [ignoredChannels, setIgnoredChannels] = useState<Set<string>>(new Set());
 
+  // Time sync
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  // Network info
+  const [networkInfo, setNetworkInfo] = useState<{ interfaces: any[]; ports: any[] } | null>(null);
+  const [networkLoading, setNetworkLoading] = useState(false);
+
   // Snapshot pagination & cache
   const SNAPSHOT_PAGE_SIZE = 16;
   const [snapshotPage, setSnapshotPage] = useState(1);
@@ -381,6 +390,36 @@ export default function DeviceDetail() {
       navigate('/devices');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Delete failed');
+    }
+  };
+
+  const handleSyncTime = async () => {
+    if (!deviceId || !confirm('Sync device time to server time (Israel timezone)?')) return;
+    setSyncing(true);
+    setSyncResult(null);
+    try {
+      const result = await api.syncDeviceTime(deviceId);
+      setSyncResult({
+        success: result.success,
+        message: result.success ? `Time set to ${result.time_set}` : `Failed (HTTP ${result.status_code})`,
+      });
+    } catch (err) {
+      setSyncResult({ success: false, message: err instanceof Error ? err.message : 'Sync failed' });
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const handleLoadNetwork = async () => {
+    if (!deviceId) return;
+    setNetworkLoading(true);
+    try {
+      const result = await api.getDeviceNetwork(deviceId);
+      setNetworkInfo(result);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load network info');
+    } finally {
+      setNetworkLoading(false);
     }
   };
 
@@ -787,7 +826,7 @@ export default function DeviceDetail() {
       <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
         <Tabs value={tab} onChange={(_e, v: number) => setTab(v)}>
           <Tab label={`${t('deviceDetail.cameras')} (${cameras.length}${ignoredChannels.size > 0 ? `, ${ignoredChannels.size} ${t('deviceDetail.ignored')}` : ''})`} />
-          <Tab label={`${t('deviceDetail.disks')} (${disks.length})`} />
+          <Tab label={t('deviceDetail.system', 'System')} />
           <Tab label={t('deviceDetail.history')} />
           <Tab label={`${t('deviceDetail.alerts')} (${alerts.length})`} />
         </Tabs>
@@ -871,29 +910,146 @@ export default function DeviceDetail() {
         )}
       </TabPanel>
 
-      {/* ----- Tab 1: Disks ----- */}
+      {/* ----- Tab 1: System ----- */}
       <TabPanel value={tab} index={1}>
-        {disks.length === 0 ? (
-          <Typography color="text.secondary">{t('deviceDetail.noDisks')}</Typography>
-        ) : (
-          <Box sx={{ width: '100%', overflowX: 'auto' }}>
-            <Box sx={{ minWidth: 800 }}>
-              <DataGrid
-                rows={disks}
-                columns={diskColumns}
-                getRowId={(row) => row.disk_id}
-                density="compact"
-                autoHeight
-                disableRowSelectionOnClick
-                hideFooter={disks.length <= 25}
-                sx={{
-                  ...getDataGridSx(mode),
-                  '& .MuiDataGrid-cell': { display: 'flex', alignItems: 'center' },
-                }}
-              />
-            </Box>
-          </Box>
-        )}
+        <Stack spacing={3}>
+          {/* --- Time --- */}
+          <Card variant="outlined">
+            <CardContent>
+              <Typography variant="h6" gutterBottom>{t('deviceDetail.time', 'Time')}</Typography>
+              <Box sx={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 16px', fontSize: 14 }}>
+                <Typography variant="body2" color="text.secondary">{t('deviceDetail.deviceTime', 'Device time')}</Typography>
+                <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
+                  {timeCheck?.device_time || '-'}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">{t('deviceDetail.serverTime', 'Server time')}</Typography>
+                <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
+                  {timeCheck?.server_time || '-'}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">{t('deviceDetail.timeDrift', 'Drift')}</Typography>
+                <Typography
+                  variant="body2"
+                  sx={{ fontFamily: 'monospace', color: absDrift == null ? undefined : absDrift < 30 ? 'success.main' : absDrift < 300 ? 'warning.main' : 'error.main' }}
+                >
+                  {driftSeconds != null ? `${driftSeconds > 0 ? '+' : ''}${driftSeconds}s` : '-'}
+                </Typography>
+                {timeCheck?.timezone && (
+                  <>
+                    <Typography variant="body2" color="text.secondary">Timezone</Typography>
+                    <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>{timeCheck.timezone}</Typography>
+                  </>
+                )}
+                {timeCheck?.time_mode && (
+                  <>
+                    <Typography variant="body2" color="text.secondary">Mode</Typography>
+                    <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>{timeCheck.time_mode}</Typography>
+                  </>
+                )}
+              </Box>
+              <Box mt={2} display="flex" alignItems="center" gap={2}>
+                <Button
+                  variant="contained"
+                  size="small"
+                  onClick={handleSyncTime}
+                  disabled={syncing}
+                  startIcon={syncing ? <CircularProgress size={16} /> : <AccessTimeIcon />}
+                >
+                  {t('deviceDetail.syncTime', 'Sync Time')}
+                </Button>
+                {syncResult && (
+                  <Chip
+                    label={syncResult.message}
+                    size="small"
+                    color={syncResult.success ? 'success' : 'error'}
+                    variant="outlined"
+                  />
+                )}
+              </Box>
+            </CardContent>
+          </Card>
+
+          {/* --- Disks --- */}
+          <Card variant="outlined">
+            <CardContent>
+              <Typography variant="h6" gutterBottom>{t('deviceDetail.disks')} ({disks.length})</Typography>
+              {disks.length === 0 ? (
+                <Typography color="text.secondary">{t('deviceDetail.noDisks')}</Typography>
+              ) : (
+                <Box sx={{ width: '100%', overflowX: 'auto' }}>
+                  <Box sx={{ minWidth: 800 }}>
+                    <DataGrid
+                      rows={disks}
+                      columns={diskColumns}
+                      getRowId={(row) => row.disk_id}
+                      density="compact"
+                      autoHeight
+                      disableRowSelectionOnClick
+                      hideFooter={disks.length <= 25}
+                      sx={{
+                        ...getDataGridSx(mode),
+                        '& .MuiDataGrid-cell': { display: 'flex', alignItems: 'center' },
+                      }}
+                    />
+                  </Box>
+                </Box>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* --- Network --- */}
+          <Card variant="outlined">
+            <CardContent>
+              <Box display="flex" alignItems="center" justifyContent="space-between" mb={1}>
+                <Typography variant="h6">{t('deviceDetail.network', 'Network')}</Typography>
+                <Button size="small" variant="outlined" onClick={handleLoadNetwork} disabled={networkLoading}>
+                  {networkLoading ? <CircularProgress size={16} /> : t('deviceDetail.loadNetwork', 'Load')}
+                </Button>
+              </Box>
+              {networkInfo ? (
+                <Stack spacing={2}>
+                  {networkInfo.interfaces.length > 0 && (
+                    <Box>
+                      <Typography variant="subtitle2" color="text.secondary" gutterBottom>Interfaces</Typography>
+                      <Box sx={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '2px 16px', fontSize: 14 }}>
+                        {networkInfo.interfaces.map((iface) => (
+                          <Box key={iface.id} sx={{ display: 'contents' }}>
+                            <Typography variant="body2" color="text.secondary">LAN {iface.id}</Typography>
+                            <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
+                              {[iface.ip, iface.mask && `/ ${iface.mask}`, iface.gateway && `gw ${iface.gateway}`, iface.mac && `(${iface.mac})`].filter(Boolean).join(' ')}
+                            </Typography>
+                          </Box>
+                        ))}
+                      </Box>
+                    </Box>
+                  )}
+                  {networkInfo.ports.length > 0 && (
+                    <Box>
+                      <Typography variant="subtitle2" color="text.secondary" gutterBottom>Ports</Typography>
+                      <Box display="flex" gap={1} flexWrap="wrap">
+                        {networkInfo.ports.map((p) => (
+                          <Chip
+                            key={`${p.protocol}-${p.port}`}
+                            label={`${p.protocol}: ${p.port}`}
+                            size="small"
+                            variant="outlined"
+                            color={p.enabled ? 'default' : 'error'}
+                          />
+                        ))}
+                      </Box>
+                    </Box>
+                  )}
+                  {networkInfo.interfaces.length === 0 && networkInfo.ports.length === 0 && (
+                    <Typography color="text.secondary">No network data available</Typography>
+                  )}
+                </Stack>
+              ) : (
+                <Typography variant="body2" color="text.secondary">
+                  {t('deviceDetail.clickLoad', 'Click Load to fetch network configuration from device')}
+                </Typography>
+              )}
+            </CardContent>
+          </Card>
+        </Stack>
       </TabPanel>
 
       {/* ----- Tab 2: History ----- */}

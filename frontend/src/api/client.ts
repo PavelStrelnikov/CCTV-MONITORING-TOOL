@@ -96,6 +96,18 @@ export const api = {
       body: JSON.stringify(channels),
     }),
 
+  // Time sync
+  syncDeviceTime: (deviceId: string) =>
+    request<{ success: boolean; time_set: string; timezone: string; status_code: number }>(
+      `/devices/${deviceId}/sync-time`, { method: 'POST' },
+    ),
+
+  // Network info
+  getDeviceNetwork: (deviceId: string) =>
+    request<{ interfaces: { id: string; ip: string | null; mask: string | null; gateway: string | null; mac: string | null }[]; ports: { protocol: string; port: number; enabled: boolean }[] }>(
+      `/devices/${deviceId}/network`,
+    ),
+
   // Snapshot URL (timestamp param for cache-busting on refresh)
   getSnapshotUrl: (deviceId: string, channelId: string) =>
     `${BASE}/devices/${deviceId}/snapshot/${channelId}?t=${Math.floor(Date.now() / 30000)}`,
