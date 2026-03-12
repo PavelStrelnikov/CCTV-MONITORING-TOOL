@@ -275,6 +275,10 @@ export default function DeviceDetail() {
   const [tab, setTab] = useState(0);
   const [ignoredChannels, setIgnoredChannels] = useState<Set<string>>(new Set());
 
+  // Snapshot pagination
+  const SNAPSHOT_PAGE_SIZE = 16;
+  const [snapshotPage, setSnapshotPage] = useState(1);
+
   // Tags
   const [tagInput, setTagInput] = useState('');
   const [addingTag, setAddingTag] = useState(false);
@@ -293,6 +297,7 @@ export default function DeviceDetail() {
   // ---------- Fetch detail ----------
   useEffect(() => {
     if (!deviceId) return;
+    setSnapshotPage(1);
     api
       .getDeviceDetail(deviceId)
       .then((d) => {
@@ -712,25 +717,58 @@ export default function DeviceDetail() {
                 Snapshot loading is on-demand for this legacy NVR model.
               </Alert>
             )}
-            <Box
-              sx={{
-                display: 'grid',
-                gridTemplateColumns: { xs: 'repeat(auto-fill, minmax(160px, 1fr))', sm: 'repeat(auto-fill, minmax(220px, 1fr))' },
-                gap: 2,
-              }}
-            >
-              {cameras.map((c) => (
-                <CameraCard
-                  key={c.channel_id}
-                  cam={c}
-                  ignored={ignoredChannels.has(c.channel_id)}
-                  onToggleIgnore={handleToggleIgnore}
-                  snapshotUrl={api.getSnapshotUrl(deviceId!, c.channel_id)}
-                  t={t}
-                  lazySnapshot={isLegacySnapshotModel}
-                />
-              ))}
-            </Box>
+            {(() => {
+              const totalSnapshotPages = Math.max(1, Math.ceil(cameras.length / SNAPSHOT_PAGE_SIZE));
+              const effectivePage = Math.min(snapshotPage, totalSnapshotPages);
+              const pagedCameras = cameras.slice(
+                (effectivePage - 1) * SNAPSHOT_PAGE_SIZE,
+                effectivePage * SNAPSHOT_PAGE_SIZE,
+              );
+              return (
+                <>
+                  <Box
+                    sx={{
+                      display: 'grid',
+                      gridTemplateColumns: { xs: 'repeat(auto-fill, minmax(160px, 1fr))', sm: 'repeat(auto-fill, minmax(220px, 1fr))' },
+                      gap: 2,
+                    }}
+                  >
+                    {pagedCameras.map((c) => (
+                      <CameraCard
+                        key={c.channel_id}
+                        cam={c}
+                        ignored={ignoredChannels.has(c.channel_id)}
+                        onToggleIgnore={handleToggleIgnore}
+                        snapshotUrl={api.getSnapshotUrl(deviceId!, c.channel_id)}
+                        t={t}
+                        lazySnapshot={isLegacySnapshotModel}
+                      />
+                    ))}
+                  </Box>
+                  {totalSnapshotPages > 1 && (
+                    <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 2, mt: 2 }}>
+                      <Button
+                        size="small"
+                        disabled={effectivePage <= 1}
+                        onClick={() => setSnapshotPage(p => p - 1)}
+                      >
+                        {t('common.back', '← Back')}
+                      </Button>
+                      <Typography variant="body2">
+                        {effectivePage} / {totalSnapshotPages}
+                      </Typography>
+                      <Button
+                        size="small"
+                        disabled={effectivePage >= totalSnapshotPages}
+                        onClick={() => setSnapshotPage(p => p + 1)}
+                      >
+                        {t('common.next', 'Next →')}
+                      </Button>
+                    </Box>
+                  )}
+                </>
+              );
+            })()}
           </>
         )}
       </TabPanel>
