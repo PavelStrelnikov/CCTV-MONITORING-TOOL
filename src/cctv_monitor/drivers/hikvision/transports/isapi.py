@@ -127,6 +127,42 @@ class IsapiTransport(HikvisionTransport):
         response = await self._request("GET", "/ISAPI/System/time")
         return {"raw_xml": response.text}
 
+    async def set_device_time(self, iso_time: str, timezone: str = "CST-2:00:00DST01:00:00,M3.5.5/02:00:00,M10.5.0/02:00:00") -> dict:
+        """Set device time via PUT /ISAPI/System/time.
+
+        Args:
+            iso_time: ISO 8601 datetime string (e.g. "2026-03-12T14:30:00+02:00")
+            timezone: POSIX timezone string for Israel (default: IST with DST rules)
+        """
+        xml_body = (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            "<Time>"
+            f"<timeMode>manual</timeMode>"
+            f"<localTime>{iso_time}</localTime>"
+            f"<timeZone>{timezone}</timeZone>"
+            "</Time>"
+        )
+        response = await self._request(
+            "PUT",
+            "/ISAPI/System/time",
+            content=xml_body,
+            headers={"Content-Type": "application/xml"},
+        )
+        return {"status_code": response.status_code, "raw_xml": response.text}
+
+    async def get_network_interfaces(self) -> dict:
+        """Get network interfaces from /ISAPI/System/Network/interfaces."""
+        response = await self._request("GET", "/ISAPI/System/Network/interfaces")
+        return {"raw_xml": response.text}
+
+    async def get_network_ports(self) -> dict:
+        """Get port configuration from /ISAPI/Security/adminAccesses."""
+        try:
+            response = await self._request("GET", "/ISAPI/Security/adminAccesses")
+            return {"raw_xml": response.text}
+        except Exception:
+            return {"raw_xml": ""}
+
     async def get_snapshot(self, channel_id: str) -> bytes:
         # Different Hikvision models expose snapshot channels in different formats:
         # 1) Sequential track format: 101, 201, ...

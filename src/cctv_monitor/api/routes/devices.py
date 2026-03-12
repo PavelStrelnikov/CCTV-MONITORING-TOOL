@@ -238,6 +238,150 @@ async def set_ignored_channels(
     return device.ignored_channels or []
 
 
+@router.post("/devices/{device_id}/sync-time")
+async def sync_device_time(
+    device_id: str,
+    session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+    http_client: HttpClientManager = Depends(get_http_client),
+):
+    """Sync device time to current server time (Israel timezone) via ISAPI."""
+    from datetime import datetime, timezone as tz, timedelta
+
+    repo = DeviceRepository(session)
+    device = await repo.get_by_id(device_id)
+    if device is None:
+        raise HTTPException(status_code=404, detail="Device not found")
+
+    if not device.web_port:
+        raise HTTPException(status_code=400, detail="No web port configured — ISAPI required for time sync")
+
+    password = decrypt_value(device.password_encrypted, settings.ENCRYPTION_KEY)
+    transport = IsapiTransport(http_client)
+    try:
+        await transport.connect(device.host, device.web_port, device.username, password)
+
+        # Israel timezone: UTC+2 (winter) / UTC+3 (summer DST)
+        # Hikvision POSIX TZ string for Israel
+        israel_tz_posix = "CST-2:00:00DST01:00:00,M3.5.5/02:00:00,M10.5.0/02:00:00"
+
+        # Current server time in Israel timezone
+        israel_offset = timedelta(hours=2)  # base offset
+        now_utc = datetime.now(tz.utc)
+        # Use Python's zoneinfo if available for correct DST
+        try:
+            from zoneinfo import ZoneInfo
+            israel_tz = ZoneInfo("Asia/Jerusalem")
+            now_israel = now_utc.astimezone(israel_tz)
+        except Exception:
+            now_israel = now_utc.astimezone(tz(israel_offset))
+
+        iso_time = now_israel.strftime("%Y-%m-%dT%H:%M:%S") + now_israel.strftime("%z")[:3] + ":" + now_israel.strftime("%z")[3:]
+
+        result = await transport.set_device_time(iso_time, israel_tz_posix)
+
+        return {
+            "success": result["status_code"] < 300,
+            "time_set": iso_time,
+            "timezone": israel_tz_posix,
+            "status_code": result["status_code"],
+        }
+    except IsapiAuthError as exc:
+        raise HTTPException(status_code=502, detail=f"Auth failed: {exc}")
+    except Exception as exc:
+        logger.warning("Time sync failed for device=%s: %s", device_id, exc)
+        raise HTTPException(status_code=502, detail=f"Time sync failed: {exc}")
+    finally:
+        try:
+            await transport.disconnect()
+        except Exception:
+            pass
+
+
+@router.get("/devices/{device_id}/network")
+async def get_device_network(
+    device_id: str,
+    session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+    http_client: HttpClientManager = Depends(get_http_client),
+):
+    """Get device network configuration via ISAPI."""
+    import xml.etree.ElementTree as ET
+
+    repo = DeviceRepository(session)
+    device = await repo.get_by_id(device_id)
+    if device is None:
+        raise HTTPException(status_code=404, detail="Device not found")
+
+    if not device.web_port:
+        raise HTTPException(status_code=400, detail="No web port configured")
+
+    password = decrypt_value(device.password_encrypted, settings.ENCRYPTION_KEY)
+    transport = IsapiTransport(http_client)
+    interfaces = []
+    ports = []
+    try:
+        await transport.connect(device.host, device.web_port, device.username, password)
+
+        # Network interfaces
+        try:
+            net_result = await transport.get_network_interfaces()
+            raw_xml = net_result.get("raw_xml", "")
+            if raw_xml:
+                root = ET.fromstring(raw_xml)
+                ns = ""
+                if root.tag.startswith("{"):
+                    ns = root.tag.split("}")[0] + "}"
+                for iface in root.iter(f"{ns}NetworkInterface"):
+                    ip_el = iface.find(f".//{ns}ipAddress") or iface.find(f".//{ns}IPAddress")
+                    mask_el = iface.find(f".//{ns}subnetMask") or iface.find(f".//{ns}SubnetMask")
+                    gw_el = iface.find(f".//{ns}DefaultGateway/{ns}ipAddress") or iface.find(f".//{ns}defaultGateway/{ns}ipAddress")
+                    mac_el = iface.find(f".//{ns}MACAddress") or iface.find(f".//{ns}macAddress")
+                    iface_id = iface.findtext(f"{ns}id", "")
+                    interfaces.append({
+                        "id": iface_id,
+                        "ip": ip_el.text if ip_el is not None else None,
+                        "mask": mask_el.text if mask_el is not None else None,
+                        "gateway": gw_el.text if gw_el is not None else None,
+                        "mac": mac_el.text if mac_el is not None else None,
+                    })
+        except Exception as exc:
+            logger.warning("Failed to get network interfaces for device=%s: %s", device_id, exc)
+
+        # Ports
+        try:
+            ports_result = await transport.get_network_ports()
+            raw_xml = ports_result.get("raw_xml", "")
+            if raw_xml:
+                root = ET.fromstring(raw_xml)
+                ns = ""
+                if root.tag.startswith("{"):
+                    ns = root.tag.split("}")[0] + "}"
+                for access in root.iter(f"{ns}AdminAccessProtocol"):
+                    proto = access.findtext(f"{ns}protocol", "")
+                    port_num = access.findtext(f"{ns}portNo", "")
+                    enabled = access.findtext(f"{ns}enabled", "true")
+                    if proto and port_num:
+                        ports.append({
+                            "protocol": proto,
+                            "port": int(port_num),
+                            "enabled": enabled.lower() == "true",
+                        })
+        except Exception as exc:
+            logger.warning("Failed to get ports for device=%s: %s", device_id, exc)
+
+        return {"interfaces": interfaces, "ports": ports}
+    except IsapiAuthError as exc:
+        raise HTTPException(status_code=502, detail=f"Auth failed: {exc}")
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Failed to get network info: {exc}")
+    finally:
+        try:
+            await transport.disconnect()
+        except Exception:
+            pass
+
+
 @router.post("/devices/{device_id}/poll", response_model=PollResultOut)
 async def poll_device(
     device_id: str,
