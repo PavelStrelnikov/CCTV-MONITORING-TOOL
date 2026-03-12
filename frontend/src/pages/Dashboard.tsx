@@ -18,6 +18,9 @@ import TableCell from '@mui/material/TableCell';
 import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
 import TablePagination from '@mui/material/TablePagination';
+import Dialog from '@mui/material/Dialog';
+import DialogTitle from '@mui/material/DialogTitle';
+import DialogContent from '@mui/material/DialogContent';
 import DevicesIcon from '@mui/icons-material/Router';
 import VideocamIcon from '@mui/icons-material/Videocam';
 import StorageIcon from '@mui/icons-material/Storage';
@@ -28,7 +31,7 @@ import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive';
 import { api } from '../api/client.ts';
 import { timeAgo } from '../utils/formatTime.ts';
-import type { Overview, Alert as AlertType } from '../types.ts';
+import type { Overview, OverviewDeviceSummary, Alert as AlertType } from '../types.ts';
 
 export default function Dashboard() {
   const { t } = useTranslation();
@@ -38,6 +41,7 @@ export default function Dashboard() {
   const [error, setError] = useState('');
   const [page, setPage] = useState(0);
   const rowsPerPage = 10;
+  const [drillDown, setDrillDown] = useState<{ title: string; items: { device: OverviewDeviceSummary; detail: string }[] } | null>(null);
 
   const fetchData = async () => {
     try {
@@ -75,6 +79,57 @@ export default function Dashboard() {
 
   const ov = overview!;
 
+  // Drill-down handlers
+  const showUnreachableDevices = () => {
+    const items = ov.devices.filter(d => !d.reachable).map(d => ({
+      device: d,
+      detail: d.last_poll_at ? `Last poll: ${timeAgo(d.last_poll_at)}` : 'Never polled',
+    }));
+    if (items.length > 0) setDrillDown({ title: t('dashboard.offlineDevices', 'Offline Devices'), items });
+  };
+
+  const showOfflineCameras = () => {
+    const items = ov.devices
+      .filter(d => d.reachable && d.offline_cameras > 0)
+      .map(d => ({
+        device: d,
+        detail: `${d.offline_cameras} offline / ${d.camera_count} total`,
+      }));
+    if (items.length > 0) setDrillDown({ title: t('dashboard.offlineCameras', 'Offline Cameras'), items });
+  };
+
+  const showDiskProblems = () => {
+    const items = ov.devices
+      .filter(d => d.reachable && !d.disk_ok)
+      .map(d => ({
+        device: d,
+        detail: t('dashboard.diskError', 'Disk error'),
+      }));
+    if (items.length > 0) setDrillDown({ title: t('dashboard.diskProblems', 'Disk Problems'), items });
+  };
+
+  const showRecordingProblems = () => {
+    const items = ov.devices
+      .filter(d => d.reachable && d.recording_total > 0 && d.recording_ok < d.recording_total)
+      .map(d => ({
+        device: d,
+        detail: `${d.recording_total - d.recording_ok} not recording / ${d.recording_total} total`,
+      }));
+    if (items.length > 0) setDrillDown({ title: t('dashboard.recordingProblems', 'Recording Problems'), items });
+  };
+
+  const showTimeDriftProblems = () => {
+    const items = ov.devices
+      .filter(d => d.reachable && d.time_drift != null && Math.abs(d.time_drift) > 300)
+      .map(d => {
+        const drift = d.time_drift!;
+        const abs = Math.abs(drift);
+        const label = abs < 60 ? `${drift}s` : abs < 3600 ? `${Math.round(drift / 60)}min` : `${(drift / 3600).toFixed(1)}h`;
+        return { device: d, detail: `Drift: ${drift > 0 ? '+' : ''}${label}` };
+      });
+    if (items.length > 0) setDrillDown({ title: t('dashboard.timeDriftProblems', 'Time Drift Problems'), items });
+  };
+
   // Stat cards - row 1: devices & cameras
   const statCards = [
     {
@@ -83,6 +138,7 @@ export default function Dashboard() {
       subtitle: ov.unreachable_devices > 0 ? t('dashboard.offline', { count: ov.unreachable_devices }) : t('dashboard.allOnline'),
       accent: ov.unreachable_devices > 0 ? '#EF4444' : '#22C55E',
       icon: <DevicesIcon sx={{ fontSize: 28 }} />,
+      onClick: ov.unreachable_devices > 0 ? showUnreachableDevices : undefined,
     },
     {
       title: t('dashboard.cameras'),
@@ -90,6 +146,7 @@ export default function Dashboard() {
       subtitle: ov.offline_cameras > 0 ? t('dashboard.offline', { count: ov.offline_cameras }) : t('dashboard.allOnline'),
       accent: ov.offline_cameras > 0 ? '#F59E0B' : '#22C55E',
       icon: <VideocamIcon sx={{ fontSize: 28 }} />,
+      onClick: ov.offline_cameras > 0 ? showOfflineCameras : undefined,
     },
     {
       title: t('dashboard.disks'),
@@ -97,6 +154,7 @@ export default function Dashboard() {
       subtitle: ov.disks_error_count > 0 ? t('dashboard.error', { count: ov.disks_error_count }) : t('dashboard.allOk'),
       accent: ov.disks_error_count > 0 ? '#EF4444' : '#22C55E',
       icon: <StorageIcon sx={{ fontSize: 28 }} />,
+      onClick: ov.disks_error_count > 0 ? showDiskProblems : undefined,
     },
     {
       title: t('dashboard.recording'),
@@ -106,6 +164,7 @@ export default function Dashboard() {
         : t('dashboard.noData'),
       accent: ov.recording_total > 0 && ov.recording_ok < ov.recording_total ? '#F59E0B' : '#22C55E',
       icon: <FiberManualRecordIcon sx={{ fontSize: 28 }} />,
+      onClick: ov.recording_ok < ov.recording_total ? showRecordingProblems : undefined,
     },
     {
       title: t('dashboard.timeSync'),
@@ -113,6 +172,7 @@ export default function Dashboard() {
       subtitle: ov.time_drift_issues > 0 ? t('dashboard.devicesDrifted', { count: ov.time_drift_issues }) : t('dashboard.allSynced'),
       accent: ov.time_drift_issues > 0 ? '#F59E0B' : '#22C55E',
       icon: <AccessTimeIcon sx={{ fontSize: 28 }} />,
+      onClick: ov.time_drift_issues > 0 ? showTimeDriftProblems : undefined,
     },
     {
       title: t('dashboard.alerts'),
@@ -156,7 +216,13 @@ export default function Dashboard() {
         {statCards.map((c) => (
           <Card
             key={c.title}
-            sx={{ borderInlineStart: `4px solid ${c.accent}` }}
+            sx={{
+              borderInlineStart: `4px solid ${c.accent}`,
+              cursor: c.onClick ? 'pointer' : 'default',
+              transition: 'transform 0.15s ease',
+              '&:hover': c.onClick ? { transform: 'scale(1.02)' } : {},
+            }}
+            onClick={c.onClick}
           >
             <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 1.5, py: 1.5, '&:last-child': { pb: 1.5 } }}>
               <Box sx={{ color: c.accent }}>{c.icon}</Box>
@@ -336,6 +402,31 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       </Box>
+
+      {/* Drill-down dialog */}
+      <Dialog open={!!drillDown} onClose={() => setDrillDown(null)} maxWidth="sm" fullWidth>
+        {drillDown && (
+          <>
+            <DialogTitle>{drillDown.title}</DialogTitle>
+            <DialogContent>
+              <List disablePadding>
+                {drillDown.items.map(({ device: dev, detail }) => (
+                  <ListItem key={dev.device_id} divider sx={{ px: 0 }}>
+                    <ListItemText
+                      primary={
+                        <Link component={RouterLink} to={`/devices/${dev.device_id}`} underline="hover" onClick={() => setDrillDown(null)}>
+                          {dev.name}
+                        </Link>
+                      }
+                      secondary={detail}
+                    />
+                  </ListItem>
+                ))}
+              </List>
+            </DialogContent>
+          </>
+        )}
+      </Dialog>
     </Box>
   );
 }
