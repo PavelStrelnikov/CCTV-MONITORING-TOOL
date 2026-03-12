@@ -6,7 +6,7 @@ import uuid
 
 logger = logging.getLogger(__name__)
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy import delete as sa_delete
 from sqlalchemy.exc import IntegrityError
@@ -1182,6 +1182,70 @@ def _get_sdk_batch_lock(device_id: str) -> asyncio.Lock:
     if device_id not in _sdk_batch_locks:
         _sdk_batch_locks[device_id] = asyncio.Lock()
     return _sdk_batch_locks[device_id]
+
+
+@router.get("/devices/{device_id}/snapshots")
+async def get_snapshots_page(
+    device_id: str,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(16, ge=1, le=32),
+    session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+):
+    """Return base64 JPEG snapshots for one page of channels."""
+    import base64 as _b64
+
+    repo = DeviceRepository(session)
+    device = await repo.get_by_id(device_id)
+    if device is None:
+        raise HTTPException(status_code=404, detail="Device not found")
+
+    # Build channel list (excluding ignored)
+    all_channels = _get_channel_ids_from_health(device.last_health_json)
+    ignored = set(device.ignored_channels or [])
+    channels = [ch for ch in all_channels if ch not in ignored]
+
+    total = len(channels)
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    page = min(page, total_pages)
+    start = (page - 1) * page_size
+    page_channels = channels[start : start + page_size]
+
+    if not page_channels:
+        return {
+            "snapshots": {},
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "pages": total_pages,
+        }
+
+    password = decrypt_value(device.password_encrypted, settings.ENCRYPTION_KEY)
+    sdk_available = bool(device.sdk_port and settings.HCNETSDK_LIB_PATH)
+    snapshots: dict[str, str | None] = {}
+
+    semaphore = _get_snapshot_semaphore(device_id)
+    async with semaphore:
+        if sdk_available:
+            results, errors = await _sdk_batch_snapshot_subprocess(
+                device.host, device.sdk_port, device.username, password,
+                page_channels, settings.HCNETSDK_LIB_PATH,
+            )
+            for ch in page_channels:
+                img = results.get(ch)
+                snapshots[ch] = _b64.b64encode(img).decode() if img else None
+        else:
+            # Non-SDK: return None per channel, frontend uses individual snapshot URLs
+            for ch in page_channels:
+                snapshots[ch] = None
+
+    return {
+        "snapshots": snapshots,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "pages": total_pages,
+    }
 
 
 @router.get("/devices/{device_id}/snapshot/{channel_id}")
