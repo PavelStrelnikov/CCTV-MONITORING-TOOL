@@ -17,6 +17,8 @@ import InputLabel from '@mui/material/InputLabel';
 import Tooltip from '@mui/material/Tooltip';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import FolderIcon from '@mui/icons-material/Folder';
 import AddIcon from '@mui/icons-material/Add';
 import CheckIcon from '@mui/icons-material/Check';
@@ -109,6 +111,16 @@ export default function FolderManagementDialog({ open, onClose, folders, onFolde
   const [editIcon, setEditIcon] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [showAddForm, setShowAddForm] = useState(false);
+  const [expandedFolders, setExpandedFolders] = useState<Set<number>>(() => new Set(folders.map((f) => f.id)));
+
+  const toggleExpanded = (folderId: number) => {
+    setExpandedFolders((prev) => {
+      const next = new Set(prev);
+      if (next.has(folderId)) next.delete(folderId);
+      else next.add(folderId);
+      return next;
+    });
+  };
 
   const handleCreate = async () => {
     if (!newName.trim()) return;
@@ -292,13 +304,16 @@ export default function FolderManagementDialog({ open, onClose, folders, onFolde
       );
     }
 
+    // Check if this is a top-level folder with children
+    const hasChildren = !isChild && folders.some((f) => f.id === folder.id && (f.children?.length ?? 0) > 0);
+
     return (
       <Box
         key={folder.id}
         sx={{
           display: 'flex',
           alignItems: 'center',
-          gap: 1,
+          gap: 0.5,
           py: 0.75,
           px: 1,
           ml: isChild ? 3 : 0,
@@ -306,8 +321,22 @@ export default function FolderManagementDialog({ open, onClose, folders, onFolde
           '&:hover': { bgcolor: 'action.hover' },
         }}
       >
+        {hasChildren ? (
+          <IconButton size="small" onClick={() => toggleExpanded(folder.id)} sx={{ p: 0.25 }}>
+            {expandedFolders.has(folder.id)
+              ? <ExpandMoreIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
+              : <ChevronLeftIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
+            }
+          </IconButton>
+        ) : (
+          <Box sx={{ width: 22 }} />
+        )}
         <FIcon sx={{ color: folder.color || 'primary.main', fontSize: 20 }} />
-        <Typography sx={{ flex: 1 }} variant="body2">
+        <Typography
+          sx={{ flex: 1, cursor: hasChildren ? 'pointer' : 'default' }}
+          variant="body2"
+          onClick={() => { if (hasChildren) toggleExpanded(folder.id); }}
+        >
           {folder.name}
           <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 1 }}>
             ({folder.device_count} {t('folders.devices')})
@@ -343,7 +372,11 @@ export default function FolderManagementDialog({ open, onClose, folders, onFolde
           {folders.map((folder) => (
             <Box key={folder.id}>
               {renderFolderItem(folder)}
-              {folder.children?.map((child) => renderFolderItem(child, true))}
+              {(folder.children?.length ?? 0) > 0 && (
+                <Collapse in={expandedFolders.has(folder.id)}>
+                  {folder.children?.map((child) => renderFolderItem(child, true))}
+                </Collapse>
+              )}
             </Box>
           ))}
         </Box>

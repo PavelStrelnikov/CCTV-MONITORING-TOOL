@@ -63,6 +63,8 @@ class DeviceTable(Base):
     folder_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("folders.id", ondelete="SET NULL"), nullable=True
     )
+    web_protocol: Mapped[str] = mapped_column(String(5), default="http")
+    display_order: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class DeviceCapabilityTable(Base):

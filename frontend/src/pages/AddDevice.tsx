@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
@@ -9,12 +9,16 @@ import Button from '@mui/material/Button';
 import Paper from '@mui/material/Paper';
 import Stack from '@mui/material/Stack';
 import Alert from '@mui/material/Alert';
+import FormControlLabel from '@mui/material/FormControlLabel';
+import Checkbox from '@mui/material/Checkbox';
 import { api } from '../api/client.ts';
 import type { DeviceCreate, FolderTree } from '../types.ts';
 
 export default function AddDevice() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const presetFolder = searchParams.get('folder');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [folders, setFolders] = useState<FolderTree[]>([]);
@@ -24,11 +28,12 @@ export default function AddDevice() {
     host: '',
     web_port: null,
     sdk_port: null,
+    web_protocol: 'http',
     username: 'admin',
     password: '',
     transport_mode: 'isapi',
     poll_interval_seconds: null,
-    folder_id: null,
+    folder_id: presetFolder ? parseInt(presetFolder, 10) : null,
   });
 
   useEffect(() => {
@@ -106,16 +111,29 @@ export default function AddDevice() {
               size="small"
               fullWidth
             />
-            <TextField
-              label={t('addDevice.webPort')}
-              name="web_port"
-              type="number"
-              value={form.web_port ?? ''}
-              onChange={handleChange}
-              placeholder="8080"
-              size="small"
-              fullWidth
-            />
+            <Box display="flex" alignItems="center" gap={1}>
+              <TextField
+                label={t('addDevice.webPort')}
+                name="web_port"
+                type="number"
+                value={form.web_port ?? ''}
+                onChange={handleChange}
+                placeholder="8080"
+                size="small"
+                sx={{ flex: 1 }}
+              />
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={form.web_protocol === 'https'}
+                    onChange={(e) => setForm((prev) => ({ ...prev, web_protocol: e.target.checked ? 'https' : 'http' }))}
+                    size="small"
+                  />
+                }
+                label="HTTPS"
+                sx={{ mr: 0 }}
+              />
+            </Box>
             <TextField
               label={t('addDevice.sdkPort')}
               name="sdk_port"

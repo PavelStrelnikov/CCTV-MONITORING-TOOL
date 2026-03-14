@@ -15,6 +15,7 @@ class DeviceConfig:
     transport_mode: DeviceTransport
     polling_policy_id: str
     is_active: bool
+    web_protocol: str = "http"
 
 
 @dataclass

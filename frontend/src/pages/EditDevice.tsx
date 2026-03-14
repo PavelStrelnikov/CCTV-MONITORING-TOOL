@@ -10,6 +10,8 @@ import Paper from '@mui/material/Paper';
 import Stack from '@mui/material/Stack';
 import Alert from '@mui/material/Alert';
 import CircularProgress from '@mui/material/CircularProgress';
+import FormControlLabel from '@mui/material/FormControlLabel';
+import Checkbox from '@mui/material/Checkbox';
 import IconButton from '@mui/material/IconButton';
 import InputAdornment from '@mui/material/InputAdornment';
 import VisibilityIcon from '@mui/icons-material/Visibility';
@@ -31,6 +33,7 @@ export default function EditDevice() {
     host: '',
     web_port: null as number | null,
     sdk_port: null as number | null,
+    web_protocol: 'http',
     username: '',
     password: '',
     transport_mode: 'isapi',
@@ -52,6 +55,7 @@ export default function EditDevice() {
           host: detail.device.host,
           web_port: detail.device.web_port,
           sdk_port: detail.device.sdk_port,
+          web_protocol: detail.device.web_protocol || 'http',
           username: creds?.username || '',
           password: creds?.password || '',
           transport_mode: detail.device.transport_mode || 'isapi',
@@ -83,6 +87,7 @@ export default function EditDevice() {
         host: form.host,
         web_port: form.web_port,
         sdk_port: form.sdk_port,
+        web_protocol: form.web_protocol,
         username: form.username,
         password: form.password,
         transport_mode: form.transport_mode,
@@ -139,16 +144,29 @@ export default function EditDevice() {
               size="small"
               fullWidth
             />
-            <TextField
-              label={t('addDevice.webPort')}
-              name="web_port"
-              type="number"
-              value={form.web_port ?? ''}
-              onChange={handleChange}
-              placeholder="8080"
-              size="small"
-              fullWidth
-            />
+            <Box display="flex" alignItems="center" gap={1}>
+              <TextField
+                label={t('addDevice.webPort')}
+                name="web_port"
+                type="number"
+                value={form.web_port ?? ''}
+                onChange={handleChange}
+                placeholder="8080"
+                size="small"
+                sx={{ flex: 1 }}
+              />
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={form.web_protocol === 'https'}
+                    onChange={(e) => setForm((prev) => ({ ...prev, web_protocol: e.target.checked ? 'https' : 'http' }))}
+                    size="small"
+                  />
+                }
+                label="HTTPS"
+                sx={{ mr: 0 }}
+              />
+            </Box>
             <TextField
               label={t('addDevice.sdkPort')}
               name="sdk_port"

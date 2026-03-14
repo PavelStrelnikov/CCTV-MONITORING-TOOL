@@ -107,6 +107,7 @@
   "deviceDetail.onlineCameras": "מצלמות מחוברות",
   "deviceDetail.timeAxis": "זמן",
   "deviceDetail.devicePoll": "סקירת מכשיר",
+  "deviceDetail.networkNotSupported": "המכשיר אינו תומך בשליפת מידע רשת",
 
   "addDevice.title": "הוסף מכשיר",
   "addDevice.deviceId": "מזהה מכשיר",
@@ -114,6 +115,7 @@
   "addDevice.vendor": "יצרן",
   "addDevice.host": "כתובת",
   "addDevice.webPort": "פורט Web (ISAPI/HTTP)",
+  "addDevice.webProtocol": "פרוטוקול Web",
   "addDevice.sdkPort": "פורט SDK",
   "addDevice.transport": "תעבורה",
   "addDevice.transportIsapi": "ISAPI (HTTP/HTTPS)",

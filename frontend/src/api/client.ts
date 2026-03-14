@@ -120,4 +120,16 @@ export const api = {
     request<Folder>(`/folders/${folderId}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteFolder: (folderId: number) =>
     request<void>(`/folders/${folderId}`, { method: 'DELETE' }),
+
+  // Reorder
+  reorderFolders: (items: { id: number; sort_order: number }[]) =>
+    request<{ ok: boolean }>('/folders/reorder', { method: 'PUT', body: JSON.stringify({ items }) }),
+  reorderDevices: (items: { device_id: string; display_order: number; folder_id?: number | null }[]) =>
+    request<{ ok: boolean }>('/devices/reorder', { method: 'PUT', body: JSON.stringify({ items }) }),
+
+  // Export
+  exportDevicesUrl: (folderIds?: number[]) => {
+    const params = folderIds && folderIds.length > 0 ? `?folder_ids=${folderIds.join(',')}` : '';
+    return `${BASE}/devices/export${params}`;
+  },
 };

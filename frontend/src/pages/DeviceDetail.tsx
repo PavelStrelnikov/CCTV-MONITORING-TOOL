@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, memo } from 'react';
 import { useParams, useNavigate, Link as RouterLink } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import Box from '@mui/material/Box';
@@ -35,6 +35,8 @@ import { LineChart } from '@mui/x-charts/LineChart';
 import NetworkCheckIcon from '@mui/icons-material/NetworkCheck';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
+import StorageIcon from '@mui/icons-material/Storage';
+import RouterIcon from '@mui/icons-material/Router';
 import { api } from '../api/client.ts';
 import { timeAgo, formatBytes } from '../utils/formatTime.ts';
 import { getDataGridSx, useThemeMode } from '../theme.ts';
@@ -55,9 +57,32 @@ function TabPanel(props: { children: React.ReactNode; value: number; index: numb
   return <Box sx={{ pt: 2 }}>{children}</Box>;
 }
 
+// ---------- Channel display name helper ----------
+const DEFAULT_CH_NAME = /^(channel|camera|ipcamera|ip camera)\s*\d+$/i;
+
+function buildChannelDisplayNames(cameras: CameraChannel[]): Map<string, string> {
+  const sorted = [...cameras].sort((a, b) => {
+    const na = parseInt(a.channel_id, 10);
+    const nb = parseInt(b.channel_id, 10);
+    if (!isNaN(na) && !isNaN(nb)) return na - nb;
+    return a.channel_id.localeCompare(b.channel_id);
+  });
+  const map = new Map<string, string>();
+  sorted.forEach((cam, idx) => {
+    const name = cam.channel_name || '';
+    if (!name || DEFAULT_CH_NAME.test(name.trim())) {
+      map.set(cam.channel_id, `Channel ${idx + 1}`);
+    } else {
+      map.set(cam.channel_id, name);
+    }
+  });
+  return map;
+}
+
 // ---------- Camera card ----------
-function CameraCard({ cam, ignored, onToggleIgnore, snapshotUrl, cachedUrl, onLoaded, t, lazySnapshot = false }: {
+const CameraCard = memo(function CameraCard({ cam, displayLabel, ignored, onToggleIgnore, snapshotUrl, cachedUrl, onLoaded, t, lazySnapshot = false }: {
   cam: CameraChannel;
+  displayLabel: string;
   ignored: boolean;
   onToggleIgnore: (channelId: string) => void;
   snapshotUrl: string;
@@ -196,7 +221,7 @@ function CameraCard({ cam, ignored, onToggleIgnore, snapshotUrl, cachedUrl, onLo
         <CardContent sx={{ py: 1, '&:last-child': { pb: 1 } }}>
           <Box display="flex" justifyContent="space-between" alignItems="center">
             <Typography variant="subtitle2" noWrap sx={{ flex: 1, mr: 0.5 }}>
-              {cam.channel_name || cam.channel_id}
+              {displayLabel}
             </Typography>
             <Box display="flex" alignItems="center" gap={0.5}>
               {recLabel && !ignored && (
@@ -276,7 +301,7 @@ function CameraCard({ cam, ignored, onToggleIgnore, snapshotUrl, cachedUrl, onLo
             }}
           >
             <Typography variant="subtitle1">
-              {cam.channel_name || cam.channel_id}
+              {displayLabel}
             </Typography>
             {cam.ip_address && (
               <Typography variant="caption" sx={{ opacity: 0.7 }}>
@@ -288,7 +313,7 @@ function CameraCard({ cam, ignored, onToggleIgnore, snapshotUrl, cachedUrl, onLo
       </Dialog>
     </>
   );
-}
+});
 
 // ---------- Main component ----------
 export default function DeviceDetail() {
@@ -303,6 +328,7 @@ export default function DeviceDetail() {
   const [error, setError] = useState('');
   const [tab, setTab] = useState(0);
   const [ignoredChannels, setIgnoredChannels] = useState<Set<string>>(new Set());
+  const [showIgnored, setShowIgnored] = useState(false);
 
   // Time sync
   const [syncing, setSyncing] = useState(false);
@@ -329,6 +355,12 @@ export default function DeviceDetail() {
     snapshotCacheRef.current.forEach((url) => URL.revokeObjectURL(url));
     snapshotCacheRef.current.clear();
     setSnapshotEpoch(e => e + 1);
+  }, []);
+
+  // Cleanup blob URLs on unmount
+  useEffect(() => {
+    const cache = snapshotCacheRef.current;
+    return () => { cache.forEach((url) => URL.revokeObjectURL(url)); };
   }, []);
 
   // Tags
@@ -375,6 +407,18 @@ export default function DeviceDetail() {
       .finally(() => setHistoryLoading(false));
   }, [tab, historyHours, deviceId]);
 
+  // ---------- Auto-load network info when System tab opens ----------
+  useEffect(() => {
+    if (tab !== 1 || !deviceId || networkInfo) return;
+    const d = detail?.device;
+    if (!d || (!d.web_port && !d.sdk_port)) return;
+    setNetworkLoading(true);
+    api.getDeviceNetwork(deviceId)
+      .then(setNetworkInfo)
+      .catch(() => setNetworkInfo({ interfaces: [], ports: [] }))
+      .finally(() => setNetworkLoading(false));
+  }, [tab, deviceId, detail, networkInfo]);
+
   // ---------- Actions ----------
   const handlePollComplete = () => {
     // Refresh detail after poll
@@ -403,6 +447,14 @@ export default function DeviceDetail() {
         success: result.success,
         message: result.success ? `Time set to ${result.time_set}` : `Failed (HTTP ${result.status_code})`,
       });
+      // Re-poll device to refresh drift value
+      if (result.success) {
+        try {
+          await api.pollDevice(deviceId);
+          const updated = await api.getDeviceDetail(deviceId);
+          setDetail(updated);
+        } catch { /* ignore poll errors */ }
+      }
     } catch (err) {
       setSyncResult({ success: false, message: err instanceof Error ? err.message : 'Sync failed' });
     } finally {
@@ -500,6 +552,19 @@ export default function DeviceDetail() {
     }
   };
 
+  // Memoize channel names and visible cameras (must be before render guards)
+  const cameras = detail?.cameras ?? [];
+  const channelNames = useMemo(() => buildChannelDisplayNames(cameras), [cameras]);
+  const visibleCameras = useMemo(() => showIgnored
+    ? cameras
+    : cameras.filter(c => !ignoredChannels.has(c.channel_id)),
+    [cameras, showIgnored, ignoredChannels]);
+
+  // History chart data
+  const historyDates = useMemo(() => history.map((h) => new Date(h.checked_at)), [history]);
+  const historyResponseTime = useMemo(() => history.map((h) => h.response_time_ms), [history]);
+  const historyOnlineCameras = useMemo(() => history.map((h) => h.online_cameras), [history]);
+
   // ---------- Render guards ----------
   if (loading) {
     return (
@@ -510,7 +575,7 @@ export default function DeviceDetail() {
   }
   if (!detail) return <Alert severity="error">{t('deviceDetail.notFound')}</Alert>;
 
-  const { device, cameras, disks, alerts } = detail;
+  const { device, disks, alerts } = detail;
   const health = detail.health ?? device.last_health;
   const isLegacySnapshotModel =
     device.vendor === 'hikvision' &&
@@ -616,20 +681,43 @@ export default function DeviceDetail() {
     },
   ];
 
-  // ---------- History chart data ----------
-  const historyDates = history.map((h) => new Date(h.checked_at));
-  const historyResponseTime = history.map((h) => h.response_time_ms);
-  const historyOnlineCameras = history.map((h) => h.online_cameras);
-
   return (
     <Box>
       {/* ---------- Header ---------- */}
       <Box display="flex" justifyContent="space-between" alignItems="flex-start" mb={2} flexWrap="wrap" gap={2}>
         <Box flex={1} minWidth={300}>
-          {/* Title row */}
-          <Box display="flex" alignItems="center" gap={2} mb={1}>
+          {/* Title row with tags */}
+          <Box display="flex" alignItems="center" gap={1.5} mb={1} flexWrap="wrap">
             <Typography variant="h4">{device.name}</Typography>
             <Chip label={statusLabel} color={statusColor} />
+            {device.tags.map((tg) => (
+              <Chip
+                key={tg.name}
+                label={tg.name}
+                size="small"
+                onDelete={() => handleRemoveTag(tg.name)}
+                sx={{ bgcolor: tg.color + '33', borderColor: tg.color, color: tg.color, fontWeight: 500 }}
+                variant="outlined"
+              />
+            ))}
+            <Autocomplete
+              freeSolo
+              size="small"
+              options={allTags.filter((tg) => !device.tags.some((dt) => dt.name === tg.name)).map((tg) => tg.name)}
+              inputValue={tagInput}
+              onInputChange={(_e, v) => setTagInput(v)}
+              onChange={(_e, v) => { if (v) { setTagInput(v); handleAddTag(v); } }}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  placeholder={t('deviceDetail.addTag')}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddTag(); } }}
+                  sx={{ width: 130, '& .MuiInputBase-input': { py: 0.25, px: 1, fontSize: 12 } }}
+                  disabled={addingTag}
+                />
+              )}
+              sx={{ display: 'inline-flex' }}
+            />
           </Box>
 
           {/* Info grid — two columns on wider screens */}
@@ -673,7 +761,7 @@ export default function DeviceDetail() {
                   <Typography
                     variant="body2"
                     component="a"
-                    href={`http://${device.host}:${device.web_port}`}
+                    href={`${device.web_protocol || 'http'}://${device.host}:${device.web_port}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     sx={{ fontFamily: 'monospace', color: 'primary.main', textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}
@@ -770,37 +858,7 @@ export default function DeviceDetail() {
             />
           )}
 
-          {/* Tags */}
-          <Box display="flex" alignItems="center" gap={0.5} mt={1} flexWrap="wrap">
-            {device.tags.map((tg) => (
-              <Chip
-                key={tg.name}
-                label={tg.name}
-                size="small"
-                onDelete={() => handleRemoveTag(tg.name)}
-                sx={{ bgcolor: tg.color + '33', borderColor: tg.color, color: tg.color, fontWeight: 500 }}
-                variant="outlined"
-              />
-            ))}
-            <Autocomplete
-              freeSolo
-              size="small"
-              options={allTags.filter((tg) => !device.tags.some((dt) => dt.name === tg.name)).map((tg) => tg.name)}
-              inputValue={tagInput}
-              onInputChange={(_e, v) => setTagInput(v)}
-              onChange={(_e, v) => { if (v) { setTagInput(v); handleAddTag(v); } }}
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  placeholder={t('deviceDetail.addTag')}
-                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddTag(); } }}
-                  sx={{ width: 150, '& .MuiInputBase-input': { py: 0.5, px: 1, fontSize: 13 } }}
-                  disabled={addingTag}
-                />
-              )}
-              sx={{ display: 'inline-flex' }}
-            />
-          </Box>
+          {/* Tags moved to title row */}
         </Box>
 
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
@@ -844,9 +902,9 @@ export default function DeviceDetail() {
               </Alert>
             )}
             {(() => {
-              const totalSnapshotPages = Math.max(1, Math.ceil(cameras.length / SNAPSHOT_PAGE_SIZE));
+              const totalSnapshotPages = Math.max(1, Math.ceil(visibleCameras.length / SNAPSHOT_PAGE_SIZE));
               const effectivePage = Math.min(snapshotPage, totalSnapshotPages);
-              const pagedCameras = cameras.slice(
+              const pagedCameras = visibleCameras.slice(
                 (effectivePage - 1) * SNAPSHOT_PAGE_SIZE,
                 effectivePage * SNAPSHOT_PAGE_SIZE,
               );
@@ -863,6 +921,7 @@ export default function DeviceDetail() {
                       <CameraCard
                         key={`${c.channel_id}-${snapshotEpoch}`}
                         cam={c}
+                        displayLabel={channelNames.get(c.channel_id) || c.channel_name || c.channel_id}
                         ignored={ignoredChannels.has(c.channel_id)}
                         onToggleIgnore={handleToggleIgnore}
                         snapshotUrl={api.getSnapshotUrl(deviceId!, c.channel_id)}
@@ -873,7 +932,7 @@ export default function DeviceDetail() {
                       />
                     ))}
                   </Box>
-                  <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 2, mt: 2 }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 2, mt: 2, flexWrap: 'wrap' }}>
                     {totalSnapshotPages > 1 && (
                       <Button
                         size="small"
@@ -902,6 +961,23 @@ export default function DeviceDetail() {
                         <RefreshIcon fontSize="small" />
                       </IconButton>
                     </Tooltip>
+                    {ignoredChannels.size > 0 && (
+                      <FormControlLabel
+                        control={
+                          <Checkbox
+                            size="small"
+                            checked={showIgnored}
+                            onChange={(_e, v) => { setShowIgnored(v); setSnapshotPage(1); }}
+                          />
+                        }
+                        label={
+                          <Typography variant="body2" color="text.secondary">
+                            {t('deviceDetail.showIgnored', 'Show ignored')} ({ignoredChannels.size})
+                          </Typography>
+                        }
+                        sx={{ ml: 1 }}
+                      />
+                    )}
                   </Box>
                 </>
               );
@@ -912,66 +988,126 @@ export default function DeviceDetail() {
 
       {/* ----- Tab 1: System ----- */}
       <TabPanel value={tab} index={1}>
-        <Stack spacing={3}>
+        <Stack spacing={2}>
           {/* --- Time --- */}
-          <Card variant="outlined">
-            <CardContent>
-              <Typography variant="h6" gutterBottom>{t('deviceDetail.time', 'Time')}</Typography>
-              <Box sx={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 16px', fontSize: 14 }}>
-                <Typography variant="body2" color="text.secondary">{t('deviceDetail.deviceTime', 'Device time')}</Typography>
-                <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
-                  {timeCheck?.device_time || '-'}
-                </Typography>
-                <Typography variant="body2" color="text.secondary">{t('deviceDetail.serverTime', 'Server time')}</Typography>
-                <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
-                  {timeCheck?.server_time || '-'}
-                </Typography>
-                <Typography variant="body2" color="text.secondary">{t('deviceDetail.timeDrift', 'Drift')}</Typography>
-                <Typography
-                  variant="body2"
-                  sx={{ fontFamily: 'monospace', color: absDrift == null ? undefined : absDrift < 30 ? 'success.main' : absDrift < 300 ? 'warning.main' : 'error.main' }}
-                >
-                  {driftSeconds != null ? `${driftSeconds > 0 ? '+' : ''}${driftSeconds}s` : '-'}
-                </Typography>
-                {timeCheck?.timezone && (
-                  <>
-                    <Typography variant="body2" color="text.secondary">Timezone</Typography>
-                    <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>{timeCheck.timezone}</Typography>
-                  </>
-                )}
-                {timeCheck?.time_mode && (
-                  <>
-                    <Typography variant="body2" color="text.secondary">Mode</Typography>
-                    <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>{timeCheck.time_mode}</Typography>
-                  </>
-                )}
+          <Card variant="outlined" sx={{ borderRadius: 2 }}>
+            <Box sx={{
+              px: 2, py: 1.5,
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              borderBottom: 1, borderColor: 'divider',
+              bgcolor: 'action.hover',
+            }}>
+              <Box display="flex" alignItems="center" gap={1}>
+                <AccessTimeIcon fontSize="small" color="primary" />
+                <Typography variant="subtitle1" fontWeight={600}>{t('deviceDetail.time', 'Time')}</Typography>
               </Box>
-              <Box mt={2} display="flex" alignItems="center" gap={2}>
-                <Button
-                  variant="contained"
-                  size="small"
-                  onClick={handleSyncTime}
-                  disabled={syncing}
-                  startIcon={syncing ? <CircularProgress size={16} /> : <AccessTimeIcon />}
-                >
-                  {t('deviceDetail.syncTime', 'Sync Time')}
-                </Button>
+              <Box display="flex" alignItems="center" gap={1}>
                 {syncResult && (
                   <Chip
                     label={syncResult.message}
                     size="small"
                     color={syncResult.success ? 'success' : 'error'}
-                    variant="outlined"
+                    variant="filled"
                   />
                 )}
+                <Tooltip title={!device?.web_port && !device?.sdk_port ? t('deviceDetail.noPort', 'No web or SDK port configured') : ''}>
+                  <span>
+                    <Button
+                      variant="contained"
+                      size="small"
+                      onClick={handleSyncTime}
+                      disabled={syncing || (!device?.web_port && !device?.sdk_port)}
+                      startIcon={syncing ? <CircularProgress size={14} /> : <AccessTimeIcon fontSize="small" />}
+                      sx={{ textTransform: 'none', minWidth: 100 }}
+                    >
+                      {t('deviceDetail.syncTime', 'Sync Time')}
+                    </Button>
+                  </span>
+                </Tooltip>
               </Box>
+            </Box>
+            <CardContent sx={{ py: 1.5, '&:last-child': { pb: 1.5 } }}>
+              {(() => {
+                const fmtTime = (iso: string | undefined) => {
+                  if (!iso) return '-';
+                  try {
+                    const d = new Date(iso);
+                    return d.toLocaleString('he-IL', {
+                      day: '2-digit', month: '2-digit', year: 'numeric',
+                      hour: '2-digit', minute: '2-digit', second: '2-digit',
+                      hour12: false,
+                    });
+                  } catch { return iso; }
+                };
+                const fmtDrift = (s: number | null | undefined) => {
+                  if (s == null) return '-';
+                  const abs = Math.abs(s);
+                  const sign = s > 0 ? '+' : s < 0 ? '-' : '';
+                  if (abs < 60) return `${sign}${abs}s`;
+                  if (abs < 3600) return `${sign}${Math.floor(abs / 60)}m ${abs % 60}s`;
+                  return `${sign}${Math.floor(abs / 3600)}h ${Math.floor((abs % 3600) / 60)}m`;
+                };
+                const fmtTz = (tz: string | undefined) => {
+                  if (!tz) return null;
+                  if (tz.startsWith('CST-2')) return 'Israel (UTC+2)';
+                  if (tz.startsWith('CST-3')) return 'UTC+3';
+                  return tz.length > 20 ? tz.slice(0, 20) + '...' : tz;
+                };
+                return (
+                  <Box display="flex" alignItems="center" gap={3} flexWrap="wrap">
+                    <Box>
+                      <Typography variant="caption" color="text.secondary">{t('deviceDetail.deviceTime', 'Device Time')}</Typography>
+                      <Typography variant="body2" fontWeight={500} sx={{ fontFamily: 'monospace' }}>{fmtTime(timeCheck?.device_time)}</Typography>
+                    </Box>
+                    <Box>
+                      <Typography variant="caption" color="text.secondary">Drift</Typography>
+                      <Box mt={0.25}>
+                        <Chip
+                          label={fmtDrift(driftSeconds)}
+                          size="small"
+                          sx={{
+                            fontWeight: 700, height: 22, fontSize: '0.75rem',
+                            bgcolor: absDrift == null ? 'action.selected'
+                              : absDrift < 30 ? 'success.main'
+                              : absDrift < 300 ? 'warning.main'
+                              : 'error.main',
+                            color: absDrift != null && absDrift < 300 ? 'success.contrastText' : undefined,
+                          }}
+                        />
+                      </Box>
+                    </Box>
+                    {timeCheck?.time_mode && (
+                      <Box>
+                        <Typography variant="caption" color="text.secondary">Mode</Typography>
+                        <Box mt={0.25}>
+                          <Chip label={timeCheck.time_mode.toUpperCase()} size="small" variant="outlined" sx={{ height: 22, fontSize: '0.75rem' }} />
+                        </Box>
+                      </Box>
+                    )}
+                    {timeCheck?.timezone && (
+                      <Box>
+                        <Typography variant="caption" color="text.secondary">TZ</Typography>
+                        <Typography variant="body2" fontWeight={500}>{fmtTz(timeCheck.timezone)}</Typography>
+                      </Box>
+                    )}
+                  </Box>
+                );
+              })()}
             </CardContent>
           </Card>
 
           {/* --- Disks --- */}
-          <Card variant="outlined">
-            <CardContent>
-              <Typography variant="h6" gutterBottom>{t('deviceDetail.disks')} ({disks.length})</Typography>
+          <Card variant="outlined" sx={{ borderRadius: 2 }}>
+            <Box sx={{
+              px: 2, py: 1.5,
+              display: 'flex', alignItems: 'center', gap: 1,
+              borderBottom: 1, borderColor: 'divider',
+              bgcolor: 'action.hover',
+            }}>
+              <StorageIcon fontSize="small" color="primary" />
+              <Typography variant="subtitle1" fontWeight={600}>{t('deviceDetail.disks')} ({disks.length})</Typography>
+            </Box>
+            <CardContent sx={{ py: disks.length === 0 ? 2 : 0, px: disks.length === 0 ? 2 : 0, '&:last-child': { pb: disks.length === 0 ? 2 : 0 } }}>
               {disks.length === 0 ? (
                 <Typography color="text.secondary">{t('deviceDetail.noDisks')}</Typography>
               ) : (
@@ -987,6 +1123,7 @@ export default function DeviceDetail() {
                       hideFooter={disks.length <= 25}
                       sx={{
                         ...getDataGridSx(mode),
+                        border: 'none',
                         '& .MuiDataGrid-cell': { display: 'flex', alignItems: 'center' },
                       }}
                     />
@@ -997,41 +1134,107 @@ export default function DeviceDetail() {
           </Card>
 
           {/* --- Network --- */}
-          <Card variant="outlined">
-            <CardContent>
-              <Box display="flex" alignItems="center" justifyContent="space-between" mb={1}>
-                <Typography variant="h6">{t('deviceDetail.network', 'Network')}</Typography>
-                <Button size="small" variant="outlined" onClick={handleLoadNetwork} disabled={networkLoading}>
-                  {networkLoading ? <CircularProgress size={16} /> : t('deviceDetail.loadNetwork', 'Load')}
-                </Button>
+          <Card variant="outlined" sx={{ borderRadius: 2 }}>
+            <Box sx={{
+              px: 2, py: 1.5,
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              borderBottom: 1, borderColor: 'divider',
+              bgcolor: 'action.hover',
+            }}>
+              <Box display="flex" alignItems="center" gap={1}>
+                <NetworkCheckIcon fontSize="small" color="primary" />
+                <Typography variant="subtitle1" fontWeight={600}>{t('deviceDetail.network', 'Network')}</Typography>
               </Box>
+              <Tooltip title={!device?.web_port && !device?.sdk_port ? t('deviceDetail.noPort', 'No web or SDK port configured') : ''}>
+                <span>
+                  <IconButton
+                    size="small"
+                    onClick={handleLoadNetwork}
+                    disabled={networkLoading || (!device?.web_port && !device?.sdk_port)}
+                  >
+                    {networkLoading ? <CircularProgress size={18} /> : <RefreshIcon fontSize="small" />}
+                  </IconButton>
+                </span>
+              </Tooltip>
+            </Box>
+            <CardContent sx={{ py: 2, '&:last-child': { pb: 2 } }}>
               {networkInfo ? (
                 <Stack spacing={2}>
                   {networkInfo.interfaces.length > 0 && (
                     <Box>
-                      <Typography variant="subtitle2" color="text.secondary" gutterBottom>Interfaces</Typography>
-                      <Box sx={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '2px 16px', fontSize: 14 }}>
+                      <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: 0.5, mb: 1, display: 'block' }}>
+                        Interfaces
+                      </Typography>
+                      <Stack spacing={1}>
                         {networkInfo.interfaces.map((iface) => (
-                          <Box key={iface.id} sx={{ display: 'contents' }}>
-                            <Typography variant="body2" color="text.secondary">LAN {iface.id}</Typography>
-                            <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
-                              {[iface.ip, iface.mask && `/ ${iface.mask}`, iface.gateway && `gw ${iface.gateway}`, iface.mac && `(${iface.mac})`].filter(Boolean).join(' ')}
-                            </Typography>
+                          <Box key={iface.id} sx={{
+                            px: 2, py: 1.5, borderRadius: 1.5, bgcolor: 'action.hover',
+                            display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap',
+                          }}>
+                            <Chip
+                              icon={<RouterIcon sx={{ fontSize: 16 }} />}
+                              label={`LAN ${iface.id}`}
+                              size="small"
+                              color="primary"
+                              variant="outlined"
+                              sx={{ fontWeight: 600 }}
+                            />
+                            <Box sx={{
+                              display: 'grid',
+                              gridTemplateColumns: 'auto 1fr',
+                              gap: '2px 12px',
+                              flex: 1,
+                              minWidth: 200,
+                            }}>
+                              {iface.ip && (
+                                <>
+                                  <Typography variant="caption" color="text.secondary">IP</Typography>
+                                  <Typography variant="body2" fontWeight={600} sx={{ fontFamily: 'monospace' }}>{iface.ip}</Typography>
+                                </>
+                              )}
+                              {iface.mask && (
+                                <>
+                                  <Typography variant="caption" color="text.secondary">Mask</Typography>
+                                  <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>{iface.mask}</Typography>
+                                </>
+                              )}
+                              {iface.gateway && (
+                                <>
+                                  <Typography variant="caption" color="text.secondary">Gateway</Typography>
+                                  <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>{iface.gateway}</Typography>
+                                </>
+                              )}
+                              {(iface.dns1 || iface.dns2) && (
+                                <>
+                                  <Typography variant="caption" color="text.secondary">DNS</Typography>
+                                  <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
+                                    {[iface.dns1, iface.dns2].filter(Boolean).join(', ')}
+                                  </Typography>
+                                </>
+                              )}
+                            </Box>
+                            {iface.mac && (
+                              <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace', ml: 'auto' }}>
+                                {iface.mac}
+                              </Typography>
+                            )}
                           </Box>
                         ))}
-                      </Box>
+                      </Stack>
                     </Box>
                   )}
                   {networkInfo.ports.length > 0 && (
                     <Box>
-                      <Typography variant="subtitle2" color="text.secondary" gutterBottom>Ports</Typography>
+                      <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: 0.5, mb: 1, display: 'block' }}>
+                        Ports
+                      </Typography>
                       <Box display="flex" gap={1} flexWrap="wrap">
                         {networkInfo.ports.map((p) => (
                           <Chip
                             key={`${p.protocol}-${p.port}`}
                             label={`${p.protocol}: ${p.port}`}
                             size="small"
-                            variant="outlined"
+                            variant={p.enabled ? 'filled' : 'outlined'}
                             color={p.enabled ? 'default' : 'error'}
                           />
                         ))}
@@ -1039,7 +1242,16 @@ export default function DeviceDetail() {
                     </Box>
                   )}
                   {networkInfo.interfaces.length === 0 && networkInfo.ports.length === 0 && (
-                    <Typography color="text.secondary">No network data available</Typography>
+                    <Box>
+                      <Typography color="text.secondary" sx={{ mb: 1 }}>
+                        {t('deviceDetail.networkNotSupported', 'Device does not support network info query')}
+                      </Typography>
+                      <Box display="flex" gap={1} flexWrap="wrap">
+                        <Chip label={`IP: ${device.host}`} size="small" variant="outlined" />
+                        {device.web_port && <Chip label={`Web: ${device.web_port}`} size="small" variant="outlined" />}
+                        {device.sdk_port && <Chip label={`SDK: ${device.sdk_port}`} size="small" variant="outlined" />}
+                      </Box>
+                    </Box>
                   )}
                 </Stack>
               ) : (

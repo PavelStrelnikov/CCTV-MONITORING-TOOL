@@ -679,6 +679,59 @@ class HCNetSDKBinding:
 
         return out_buffer.value.decode("utf-8", errors="ignore")
 
+    def std_xml_config_put(self, user_id: int, url: str, body: str) -> str:
+        """Tunnel an ISAPI PUT request through SDK (``NET_DVR_STDXMLConfig``).
+
+        Parameters
+        ----------
+        user_id:
+            Active login handle.
+        url:
+            ISAPI URL, e.g. ``"PUT /ISAPI/System/time"``.
+        body:
+            XML body to send.
+
+        Returns
+        -------
+        XML response body as a string.
+        """
+        url_bytes = url.encode("utf-8") + b"\r\n"
+        url_buffer = create_string_buffer(url_bytes)
+        body_bytes = body.encode("utf-8")
+        body_buffer = create_string_buffer(body_bytes)
+        out_buffer = create_string_buffer(131072)  # 128 KB
+        status_buffer = create_string_buffer(4096)
+
+        input_param = NET_DVR_XML_CONFIG_INPUT()
+        input_param.dwSize = ctypes.sizeof(input_param)
+        input_param.lpRequestUrl = cast(url_buffer, c_void_p)
+        input_param.dwRequestUrlLen = len(url_bytes)
+        input_param.lpInBuffer = cast(body_buffer, c_void_p)
+        input_param.dwInBufferSize = len(body_bytes)
+        input_param.dwRecvTimeOut = 10000
+
+        output_param = NET_DVR_XML_CONFIG_OUTPUT()
+        output_param.dwSize = ctypes.sizeof(output_param)
+        output_param.lpOutBuffer = cast(out_buffer, c_void_p)
+        output_param.dwOutBufferSize = 131072
+        output_param.lpStatusBuffer = cast(status_buffer, c_void_p)
+        output_param.dwStatusSize = 4096
+
+        ok = self._lib.NET_DVR_STDXMLConfig(
+            user_id,
+            ctypes.byref(input_param),
+            ctypes.byref(output_param),
+        )
+        if not ok:
+            code = self.get_last_error()
+            raise SdkError(
+                device_id=str(user_id),
+                error_code=code,
+                message=f"NET_DVR_STDXMLConfig PUT failed for {url}",
+            )
+
+        return out_buffer.value.decode("utf-8", errors="ignore")
+
     # -- configuration queries -----------------------------------------------
 
     def get_device_config(self, user_id: int) -> dict:

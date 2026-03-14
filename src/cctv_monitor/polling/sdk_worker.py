@@ -80,7 +80,23 @@ def main() -> None:
                         help="Capture JPEG snapshots for multiple channels (JSON output)")
     parser.add_argument("--snapshot-channels", type=str, default="",
                         help="Comma-separated channel IDs for batch snapshot mode")
+    parser.add_argument("--sync-time", action="store_true",
+                        help="Sync device time via SDK ISAPI tunnel")
+    parser.add_argument("--time-xml", type=str, default="",
+                        help="XML body for time sync PUT request")
+    parser.add_argument("--isapi-get", type=str, default="",
+                        help="ISAPI GET request URL via SDK tunnel (e.g. 'GET /ISAPI/System/Network/interfaces')")
     args = parser.parse_args()
+
+    # ISAPI GET mode: login, GET via ISAPI tunnel, exit
+    if args.isapi_get:
+        _isapi_get_mode(args)
+        return
+
+    # Time sync mode: login, PUT time via ISAPI tunnel, exit
+    if args.sync_time:
+        _sync_time_mode(args)
+        return
 
     # Batch snapshot mode: one login, multiple channels, JSON output
     if args.snapshot_batch:
@@ -396,6 +412,83 @@ def _snapshot_mode(args) -> None:
     except Exception as exc:
         sys.stderr.write(f"Snapshot failed: {exc}\n")
         sys.exit(1)
+
+
+def _isapi_get_mode(args) -> None:
+    """Generic ISAPI GET via SDK tunnel."""
+    from cctv_monitor.drivers.hikvision.transports.sdk_bindings import (
+        HCNetSDKBinding,
+    )
+
+    result = {"success": False, "error": None}
+    binding = None
+    user_id = -1
+    try:
+        binding = HCNetSDKBinding(lib_path=args.lib_path)
+        binding.init()
+        user_id, _info = binding.login(args.host, args.port, args.user, args.password)
+
+        url = args.isapi_get
+        response = binding.std_xml_config(user_id, url)
+        result["success"] = True
+        result["response"] = response
+    except Exception as exc:
+        result["error"] = str(exc)
+    finally:
+        if binding and user_id >= 0:
+            try:
+                binding.logout(user_id)
+            except Exception:
+                pass
+        if binding:
+            try:
+                binding.cleanup()
+            except Exception:
+                pass
+
+    print(json.dumps(result))
+
+
+def _sync_time_mode(args) -> None:
+    """Sync device time via SDK ISAPI tunnel (PUT /ISAPI/System/time)."""
+    from cctv_monitor.drivers.hikvision.transports.sdk_bindings import (
+        HCNetSDKBinding,
+    )
+
+    result = {"success": False, "error": None}
+    binding = None
+    user_id = -1
+    try:
+        binding = HCNetSDKBinding(lib_path=args.lib_path)
+        binding.init()
+        user_id, _info = binding.login(args.host, args.port, args.user, args.password)
+
+        xml_body = args.time_xml
+        if not xml_body:
+            result["error"] = "No --time-xml provided"
+            print(json.dumps(result))
+            return
+
+        response = binding.std_xml_config_put(
+            user_id, "PUT /ISAPI/System/time", xml_body,
+        )
+        result["success"] = True
+        result["response"] = response
+    except Exception as exc:
+        result["error"] = str(exc)
+    finally:
+        if binding and user_id >= 0:
+            try:
+                binding.logout(user_id)
+            except Exception:
+                pass
+        if binding:
+            try:
+                binding.cleanup()
+            except Exception:
+                pass
+
+    print(json.dumps(result))
 
 
 def _recordings_only_mode(args) -> None:

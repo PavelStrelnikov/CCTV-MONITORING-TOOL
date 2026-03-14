@@ -140,6 +140,7 @@ async def _poll_device_isapi(
         config = DeviceConfig(
             device_id=device.device_id, name=device.name, vendor=vendor,
             host=device.host, web_port=device.web_port, sdk_port=device.sdk_port,
+            web_protocol=device.web_protocol,
             username=device.username, password=password,
             transport_mode=DeviceTransport(device.transport_mode),
             polling_policy_id=device.polling_policy_id, is_active=device.is_active,
@@ -264,7 +265,8 @@ async def _poll_device_isapi(
             )
             await session.commit()
 
-        await _evaluate_alerts(device.device_id, health_json, cameras_json, session_factory)
+        ignored = {str(ch) for ch in (device.ignored_channels or [])}
+        await _evaluate_alerts(device.device_id, health_json, cameras_json, session_factory, ignored_channels=ignored)
 
         logger.info(
             "poll_all.device_ok", device_id=device.device_id,
@@ -384,7 +386,8 @@ async def _poll_device_sdk(
         )
         await session.commit()
 
-    await _evaluate_alerts(device.device_id, health_json, cameras_json, session_factory)
+    ignored = {str(ch) for ch in (device.ignored_channels or [])}
+    await _evaluate_alerts(device.device_id, health_json, cameras_json, session_factory, ignored_channels=ignored)
 
     logger.info(
         "poll_all.device_ok", device_id=device.device_id,
@@ -402,20 +405,34 @@ async def _evaluate_alerts(
     health_json: dict,
     cameras_json: list,
     session_factory,
+    ignored_channels: set[str] | None = None,
 ) -> None:
     """Run alert engine against poll results and persist new/resolved alerts."""
     try:
         h = health_json
+        ignored = ignored_channels or set()
+        # Filter ignored channels for recording/camera stats
+        monitored = [c for c in cameras_json if str(c.get("channel_id", "")) not in ignored] if ignored else cameras_json
         # Count recording stats
-        rec_total = sum(1 for c in cameras_json if c.get("recording"))
-        rec_ok = sum(1 for c in cameras_json if c.get("recording") == "recording")
+        rec_total = sum(1 for c in monitored if c.get("recording"))
+        rec_ok = sum(1 for c in monitored if c.get("recording") == "recording")
+
+        if ignored and h.get("reachable", False):
+            mon_online = sum(1 for c in monitored if c.get("status", "").lower() == "online")
+            cam_count = len(monitored)
+            cam_online = mon_online
+            cam_offline = cam_count - mon_online
+        else:
+            cam_count = h.get("camera_count", 0)
+            cam_online = h.get("online_cameras", 0)
+            cam_offline = h.get("offline_cameras", 0)
 
         summary = DeviceHealthSummary(
             device_id=device_id,
             reachable=h.get("reachable", False),
-            camera_count=h.get("camera_count", 0),
-            online_cameras=h.get("online_cameras", 0),
-            offline_cameras=h.get("offline_cameras", 0),
+            camera_count=cam_count,
+            online_cameras=cam_online,
+            offline_cameras=cam_offline,
             disk_ok=h.get("disk_ok", True),
             recording_ok=(rec_ok == rec_total) if rec_total > 0 else True,
             response_time_ms=h.get("response_time_ms", 0),

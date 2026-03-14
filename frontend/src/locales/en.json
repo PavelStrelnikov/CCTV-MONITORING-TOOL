@@ -107,6 +107,7 @@
   "deviceDetail.onlineCameras": "Online Cameras",
   "deviceDetail.timeAxis": "Time",
   "deviceDetail.devicePoll": "Device Poll",
+  "deviceDetail.networkNotSupported": "Device does not support network info query",
 
   "addDevice.title": "Add Device",
   "addDevice.deviceId": "Device ID",
@@ -114,6 +115,7 @@
   "addDevice.vendor": "Vendor",
   "addDevice.host": "Host",
   "addDevice.webPort": "Web Port (ISAPI/HTTP)",
+  "addDevice.webProtocol": "Web Protocol",
   "addDevice.sdkPort": "SDK Port",
   "addDevice.transport": "Transport",
   "addDevice.transportIsapi": "ISAPI (HTTP/HTTPS)",

@@ -1,6 +1,7 @@
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -35,6 +36,27 @@ async def create_folder(
         parent_id=folder.parent_id, sort_order=folder.sort_order,
         color=folder.color, icon=folder.icon,
     )
+
+
+class _FolderReorderItem(BaseModel):
+    id: int
+    sort_order: int
+
+
+class _FolderReorderRequest(BaseModel):
+    items: list[_FolderReorderItem]
+
+
+@router.put("/folders/reorder")
+async def reorder_folders(
+    body: _FolderReorderRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    repo = FolderRepository(session)
+    for item in body.items:
+        await repo.update(item.id, sort_order=item.sort_order)
+    await session.commit()
+    return {"ok": True}
 
 
 @router.patch("/folders/{folder_id}", response_model=FolderOut)

@@ -33,7 +33,7 @@ class HikvisionDriver:
     async def connect(self, config: DeviceConfig, port: int | None = None) -> None:
         self._config = config
         connect_port = port or config.web_port or config.sdk_port or 80
-        await self._transport.connect(config.host, connect_port, config.username, config.password)
+        await self._transport.connect(config.host, connect_port, config.username, config.password, protocol=config.web_protocol)
 
     async def disconnect(self) -> None:
         await self._transport.disconnect()

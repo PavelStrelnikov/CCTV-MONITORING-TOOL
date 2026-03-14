@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, memo } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import AppBar from '@mui/material/AppBar';
 import Box from '@mui/material/Box';
@@ -30,6 +30,26 @@ import { useThemeMode } from '../theme.ts';
 const DRAWER_WIDTH = 220;
 const DRAWER_COLLAPSED = 64;
 
+/** Isolated clock component — ticks every second without re-rendering the rest of Layout */
+const AppBarClock = memo(function AppBarClock({ locale }: { locale: string }) {
+  const [now, setNow] = useState(new Date());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  const loc = locale === 'he' ? 'he-IL' : 'en-GB';
+  return (
+    <>
+      <Typography variant="body2" sx={{ opacity: 0.85, fontVariantNumeric: 'tabular-nums', display: { xs: 'none', sm: 'block' } }}>
+        {now.toLocaleDateString(loc, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
+      </Typography>
+      <Typography variant="body2" sx={{ fontWeight: 600, fontVariantNumeric: 'tabular-nums', minWidth: 56 }}>
+        {now.toLocaleTimeString(loc, { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+      </Typography>
+    </>
+  );
+});
+
 export default function Layout() {
   const { mode, toggleTheme } = useThemeMode();
   const { t, i18n } = useTranslation();
@@ -38,12 +58,6 @@ export default function Layout() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const isRtl = i18n.language === 'he';
-  const [now, setNow] = useState(new Date());
-
-  useEffect(() => {
-    const timer = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(timer);
-  }, []);
 
   const drawerWidth = isMdUp && collapsed ? DRAWER_COLLAPSED : DRAWER_WIDTH;
 
@@ -125,12 +139,7 @@ export default function Layout() {
             {t('nav.brand')}
           </Typography>
           <Box sx={{ flex: 1 }} />
-          <Typography variant="body2" sx={{ opacity: 0.85, fontVariantNumeric: 'tabular-nums', display: { xs: 'none', sm: 'block' } }}>
-            {now.toLocaleDateString(i18n.language === 'he' ? 'he-IL' : 'en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
-          </Typography>
-          <Typography variant="body2" sx={{ fontWeight: 600, fontVariantNumeric: 'tabular-nums', minWidth: 56 }}>
-            {now.toLocaleTimeString(i18n.language === 'he' ? 'he-IL' : 'en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-          </Typography>
+          <AppBarClock locale={i18n.language} />
           <IconButton onClick={toggleTheme} color="inherit" size="small" sx={{ ml: 0.5 }}>
             {mode === 'dark' ? <Brightness7Icon /> : <Brightness4Icon />}
           </IconButton>

@@ -44,6 +44,7 @@ class DeviceCreate(BaseModel):
     password: str
     transport_mode: str = "isapi"
     poll_interval_seconds: int | None = None
+    web_protocol: str = "http"
     folder_id: int | None = None
 
 class DeviceUpdate(BaseModel):
@@ -51,12 +52,14 @@ class DeviceUpdate(BaseModel):
     host: str | None = None
     web_port: int | None = None
     sdk_port: int | None = None
+    web_protocol: str | None = None
     username: str | None = None
     password: str | None = None
     is_active: bool | None = None
     transport_mode: str | None = None
     poll_interval_seconds: int | None = None
     folder_id: int | None = None
+    display_order: int | None = None
 
 
 class HealthSummaryOut(BaseModel):
@@ -78,6 +81,7 @@ class DeviceOut(BaseModel):
     host: str
     web_port: int | None = None
     sdk_port: int | None = None
+    web_protocol: str = "http"
     transport_mode: str
     is_active: bool
     last_health: HealthSummaryOut | None = None
@@ -90,6 +94,7 @@ class DeviceOut(BaseModel):
     ignored_channels: list[str] = []
     folder_id: int | None = None
     folder_path: str | None = None
+    display_order: int = 0
 
 class CameraChannelOut(BaseModel):
     channel_id: str

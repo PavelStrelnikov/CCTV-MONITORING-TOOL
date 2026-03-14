@@ -28,9 +28,8 @@ class IsapiTransport(HikvisionTransport):
         self._auth: httpx.DigestAuth | None = None
         self._device_id: str = ""
 
-    async def connect(self, host: str, port: int, username: str, password: str) -> None:
-        scheme = "https" if port % 1000 == 443 else "http"
-        self._base_url = f"{scheme}://{host}:{port}"
+    async def connect(self, host: str, port: int, username: str, password: str, *, protocol: str = "http") -> None:
+        self._base_url = f"{protocol}://{host}:{port}"
         self._auth = httpx.DigestAuth(username, password)
         self._device_id = f"{host}:{port}"
 

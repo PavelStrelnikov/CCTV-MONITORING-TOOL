@@ -132,13 +132,28 @@ export default function Dashboard() {
   };
 
   const showRecordingProblems = () => {
-    const items = ov.devices
-      .filter(d => d.reachable && d.recording_total > 0 && d.recording_ok < d.recording_total)
-      .map(d => ({
-        device: d,
-        detail: `${d.recording_total - d.recording_ok} not recording / ${d.recording_total} total`,
-        severity: 'warning' as const,
-      }));
+    const items: { device: OverviewDeviceSummary; detail: string; severity: 'error' | 'warning' }[] = [];
+    for (const d of ov.devices) {
+      if (!d.reachable || d.recording_total === 0 || d.recording_ok >= d.recording_total) continue;
+      const notRec = d.recording_total - d.recording_ok;
+      // offline cameras are assumed not recording (red), remaining are online but not recording (yellow)
+      const offlineNotRec = Math.min(d.offline_cameras, notRec);
+      const onlineNotRec = notRec - offlineNotRec;
+      if (offlineNotRec > 0) {
+        items.push({
+          device: d,
+          detail: `${offlineNotRec} offline — not recording`,
+          severity: 'error',
+        });
+      }
+      if (onlineNotRec > 0) {
+        items.push({
+          device: d,
+          detail: `${onlineNotRec} online — not recording`,
+          severity: 'warning',
+        });
+      }
+    }
     if (items.length > 0) setDrillDown({
       title: t('dashboard.recordingProblems', 'Recording Problems'),
       accent: '#F59E0B',
@@ -183,14 +198,6 @@ export default function Dashboard() {
       onClick: ov.offline_cameras > 0 ? showOfflineCameras : undefined,
     },
     {
-      title: t('dashboard.disks'),
-      value: `${ov.disks_ok_count}/${ov.total_disks}`,
-      subtitle: ov.disks_error_count > 0 ? t('dashboard.error', { count: ov.disks_error_count }) : t('dashboard.allOk'),
-      accent: ov.disks_error_count > 0 ? '#EF4444' : '#22C55E',
-      icon: <StorageIcon sx={{ fontSize: 28 }} />,
-      onClick: ov.disks_error_count > 0 ? showDiskProblems : undefined,
-    },
-    {
       title: t('dashboard.recording'),
       value: `${ov.recording_ok}/${ov.recording_total}`,
       subtitle: ov.recording_total > 0
@@ -199,6 +206,14 @@ export default function Dashboard() {
       accent: ov.recording_total > 0 && ov.recording_ok < ov.recording_total ? '#F59E0B' : '#22C55E',
       icon: <FiberManualRecordIcon sx={{ fontSize: 28 }} />,
       onClick: ov.recording_ok < ov.recording_total ? showRecordingProblems : undefined,
+    },
+    {
+      title: t('dashboard.disks'),
+      value: `${ov.disks_ok_count}/${ov.total_disks}`,
+      subtitle: ov.disks_error_count > 0 ? t('dashboard.error', { count: ov.disks_error_count }) : t('dashboard.allOk'),
+      accent: ov.disks_error_count > 0 ? '#EF4444' : '#22C55E',
+      icon: <StorageIcon sx={{ fontSize: 28 }} />,
+      onClick: ov.disks_error_count > 0 ? showDiskProblems : undefined,
     },
     {
       title: t('dashboard.timeSync'),
@@ -337,7 +352,9 @@ export default function Dashboard() {
                         />
                       </TableCell>
                       <TableCell align="center">
-                        {dev.camera_count > 0 ? (
+                        {!dev.reachable ? (
+                          <Typography variant="caption" color="text.disabled">?</Typography>
+                        ) : dev.camera_count > 0 ? (
                           <Typography variant="body2" color={dev.offline_cameras > 0 ? 'warning.main' : 'text.primary'}>
                             {dev.online_cameras}/{dev.camera_count}
                           </Typography>
@@ -346,14 +363,18 @@ export default function Dashboard() {
                         )}
                       </TableCell>
                       <TableCell align="center">
-                        {dev.disk_ok ? (
+                        {!dev.reachable ? (
+                          <Typography variant="caption" color="text.disabled">?</Typography>
+                        ) : dev.disk_ok ? (
                           <CheckCircleIcon fontSize="small" color="success" />
                         ) : (
                           <ErrorOutlineIcon fontSize="small" color="error" />
                         )}
                       </TableCell>
                       <TableCell align="center">
-                        {dev.recording_total > 0 ? (
+                        {!dev.reachable ? (
+                          <Typography variant="caption" color="text.disabled">?</Typography>
+                        ) : dev.recording_total > 0 ? (
                           <Typography variant="body2" color={recMissing > 0 ? 'warning.main' : 'success.main'}>
                             {dev.recording_ok}/{dev.recording_total}
                           </Typography>
@@ -362,7 +383,9 @@ export default function Dashboard() {
                         )}
                       </TableCell>
                       <TableCell align="center">
-                        {driftLabel ? (
+                        {!dev.reachable ? (
+                          <Typography variant="caption" color="text.disabled">?</Typography>
+                        ) : driftLabel ? (
                           <Chip label={driftLabel} size="small" color={driftColor as any} variant="outlined" sx={{ height: 22, fontSize: 11 }} />
                         ) : (
                           <Typography variant="caption" color="text.disabled">-</Typography>

@@ -27,7 +27,9 @@ class DeviceRepository:
         return result.scalar_one_or_none()
 
     async def list_all(self) -> list[DeviceTable]:
-        result = await self._session.execute(select(DeviceTable))
+        result = await self._session.execute(
+            select(DeviceTable).order_by(DeviceTable.display_order, DeviceTable.name)
+        )
         return list(result.scalars().all())
 
     async def create(self, device: DeviceTable) -> None:

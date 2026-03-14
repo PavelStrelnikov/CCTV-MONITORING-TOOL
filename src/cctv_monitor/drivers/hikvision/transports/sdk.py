@@ -95,7 +95,7 @@ class SdkTransport(HikvisionTransport):
             return False
 
     async def connect(
-        self, host: str, port: int, username: str, password: str
+        self, host: str, port: int, username: str, password: str, *, protocol: str = "http"
     ) -> None:
         self._device_id = f"{host}:{port}"
 

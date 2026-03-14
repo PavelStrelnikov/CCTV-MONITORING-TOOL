@@ -45,6 +45,7 @@ export interface Device {
   host: string;
   web_port: number | null;
   sdk_port: number | null;
+  web_protocol: string;
   transport_mode: string;
   is_active: boolean;
   last_health: HealthSummary | null;
@@ -57,6 +58,7 @@ export interface Device {
   ignored_channels: string[];
   folder_id: number | null;
   folder_path: string | null;
+  display_order: number;
 }
 
 export interface CameraChannel {
@@ -116,6 +118,7 @@ export interface DeviceCreate {
   host: string;
   web_port: number | null;
   sdk_port: number | null;
+  web_protocol: string;
   username: string;
   password: string;
   transport_mode: string;
@@ -128,6 +131,7 @@ export interface DeviceUpdate {
   host?: string;
   web_port?: number | null;
   sdk_port?: number | null;
+  web_protocol?: string;
   username?: string;
   password?: string;
   is_active?: boolean;

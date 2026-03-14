@@ -31,7 +31,7 @@ async def get_overview(session: AsyncSession = Depends(get_session)):
         health = cached.get("health", {})
         cameras_data = cached.get("cameras", [])
         disks_data = cached.get("disks", [])
-        ignored = set(d.ignored_channels or [])
+        ignored = {str(ch) for ch in (d.ignored_channels or [])}
 
         is_reachable = health.get("reachable", False)
         if is_reachable:
@@ -40,7 +40,7 @@ async def get_overview(session: AsyncSession = Depends(get_session)):
         # Cameras (exclude ignored channels from counts)
         monitored_cameras = [
             c for c in cameras_data
-            if c.get("channel_id") not in ignored
+            if str(c.get("channel_id", "")) not in ignored
         ]
         dev_cam_count = len(monitored_cameras)
 

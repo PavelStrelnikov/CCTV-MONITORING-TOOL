@@ -2,6 +2,7 @@ import asyncio
 import io
 import logging
 import socket
+import sys
 import uuid
 
 logger = logging.getLogger(__name__)
@@ -13,6 +14,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cctv_monitor.api.deps import get_session, get_settings, get_driver_registry, get_http_client
+from pydantic import BaseModel
 from cctv_monitor.api.schemas import (
     DeviceCreate, DeviceUpdate, DeviceOut, DeviceDetailOut, PollResultOut,
     HealthSummaryOut, AlertOut, CameraChannelOut, DiskOut,
@@ -47,10 +49,24 @@ async def _check_tcp_port(host: str, port: int, timeout: float = 3.0) -> bool:
 def _device_out(d: DeviceTable, tags: list[dict] | None = None, folder_path: str | None = None) -> DeviceOut:
     cached = d.last_health_json or {}
     health_data = cached.get("health")
-    health = HealthSummaryOut(**health_data) if health_data else None
+    health = None
+    if health_data:
+        health = HealthSummaryOut(**health_data)
+        # Adjust counts: exclude ignored channels
+        ignored = {str(ch) for ch in (d.ignored_channels or [])}
+        if ignored:
+            cameras_data = cached.get("cameras", [])
+            monitored = [c for c in cameras_data if str(c.get("channel_id", "")) not in ignored]
+            monitored_online = sum(
+                1 for c in monitored if c.get("status", "").lower() == "online"
+            ) if health.reachable else 0
+            health.camera_count = len(monitored)
+            health.online_cameras = monitored_online
+            health.offline_cameras = len(monitored) - monitored_online if health.reachable else 0
     return DeviceOut(
         device_id=d.device_id, name=d.name, vendor=d.vendor,
         host=d.host, web_port=d.web_port, sdk_port=d.sdk_port,
+        web_protocol=d.web_protocol,
         transport_mode=d.transport_mode, is_active=d.is_active,
         last_health=health,
         model=d.model, serial_number=d.serial_number,
@@ -60,6 +76,7 @@ def _device_out(d: DeviceTable, tags: list[dict] | None = None, folder_path: str
         ignored_channels=d.ignored_channels or [],
         folder_id=d.folder_id,
         folder_path=folder_path,
+        display_order=d.display_order,
     )
 
 
@@ -105,6 +122,168 @@ async def list_devices(
     return result
 
 
+@router.get("/devices/export")
+async def export_devices_excel(
+    folder_ids: str | None = Query(None, description="Comma-separated folder IDs, empty = all"),
+    session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+):
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    repo = DeviceRepository(session)
+    folder_repo = FolderRepository(session)
+    all_devices = await repo.list_all()
+    folders = await folder_repo.list_all()
+
+    # Parse folder filter
+    selected_ids: set[int] | None = None
+    if folder_ids:
+        selected_ids = set()
+        for raw in folder_ids.split(","):
+            raw = raw.strip()
+            if raw.isdigit():
+                selected_ids.add(int(raw))
+
+    # Build folder hierarchy
+    folder_map = {f.id: f for f in folders}
+    top_folders = [f for f in folders if f.parent_id is None]
+    children_map: dict[int, list] = {}
+    for f in folders:
+        if f.parent_id is not None:
+            children_map.setdefault(f.parent_id, []).append(f)
+
+    # Group devices by folder
+    devices_by_folder: dict[int | None, list[DeviceTable]] = {}
+    for d in all_devices:
+        devices_by_folder.setdefault(d.folder_id, []).append(d)
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Devices"
+    ws.sheet_view.rightToLeft = True  # RTL for Hebrew
+
+    # Styles
+    thin_border = Border(
+        left=Side(style="thin", color="CCCCCC"),
+        right=Side(style="thin", color="CCCCCC"),
+        top=Side(style="thin", color="CCCCCC"),
+        bottom=Side(style="thin", color="CCCCCC"),
+    )
+    header_font = Font(name="Arial", bold=True, size=11, color="FFFFFF")
+    header_fill = PatternFill(start_color="2F5496", end_color="2F5496", fill_type="solid")
+    header_alignment = Alignment(horizontal="center", vertical="center")
+    folder_font = Font(name="Arial", bold=True, size=11)
+    data_font = Font(name="Arial", size=10)
+    data_alignment = Alignment(horizontal="right", vertical="center")
+    mono_font = Font(name="Consolas", size=10)
+
+    columns = ["שם", "כתובת IP", "פורט Web", "פורט SDK", "שם משתמש", "סיסמה"]
+    col_widths = [35, 18, 12, 12, 16, 18]
+
+    # Set column widths
+    for i, w in enumerate(col_widths, 1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+
+    row = 1
+
+    def write_header(ws, row: int):
+        for col, title in enumerate(columns, 1):
+            cell = ws.cell(row=row, column=col, value=title)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = header_alignment
+            cell.border = thin_border
+        return row + 1
+
+    def write_folder_row(ws, row: int, label: str, color_hex: str | None):
+        ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=len(columns))
+        cell = ws.cell(row=row, column=1, value=label)
+        cell.font = Font(name="Arial", bold=True, size=11, color="FFFFFF")
+        bg = (color_hex or "#3B82F6").lstrip("#")
+        cell.fill = PatternFill(start_color=bg, end_color=bg, fill_type="solid")
+        cell.alignment = Alignment(horizontal="right", vertical="center")
+        cell.border = thin_border
+        # Apply border to all merged cells
+        for col in range(2, len(columns) + 1):
+            ws.cell(row=row, column=col).border = thin_border
+        return row + 1
+
+    def write_device_row(ws, row: int, d: DeviceTable, stripe: bool):
+        password = ""
+        try:
+            password = decrypt_value(d.password_encrypted, settings.ENCRYPTION_KEY)
+        except Exception:
+            password = "***"
+        values = [d.name, d.host, d.web_port or "", d.sdk_port or "", d.username, password]
+        bg_color = "F2F2F2" if stripe else "FFFFFF"
+        fill = PatternFill(start_color=bg_color, end_color=bg_color, fill_type="solid")
+        for col, val in enumerate(values, 1):
+            cell = ws.cell(row=row, column=col, value=val)
+            cell.font = mono_font if col == 2 else data_font
+            cell.alignment = data_alignment
+            cell.fill = fill
+            cell.border = thin_border
+        return row + 1
+
+    def process_folder(ws, row: int, folder, level: int = 0) -> int:
+        folder_ids_set = {folder.id}
+        kids = children_map.get(folder.id, [])
+        for kid in kids:
+            folder_ids_set.add(kid.id)
+
+        # Check if this folder (or children) should be included
+        if selected_ids is not None:
+            if not folder_ids_set.intersection(selected_ids):
+                return row
+
+        # Folder header
+        row = write_folder_row(ws, row, ("  " * level) + folder.name, folder.color)
+
+        # Direct devices
+        devs = devices_by_folder.get(folder.id, [])
+        for i, d in enumerate(devs):
+            row = write_device_row(ws, row, d, i % 2 == 0)
+
+        # Subfolders
+        for kid in kids:
+            if selected_ids is not None and kid.id not in selected_ids and folder.id not in selected_ids:
+                continue
+            kid_devs = devices_by_folder.get(kid.id, [])
+            if kid_devs or (selected_ids is not None and kid.id in selected_ids):
+                row = write_folder_row(ws, row, "  " + kid.name, kid.color or folder.color)
+                for i, d in enumerate(kid_devs):
+                    row = write_device_row(ws, row, d, i % 2 == 0)
+
+        return row
+
+    # Header row
+    row = write_header(ws, row)
+
+    # Process each top folder
+    for tf in top_folders:
+        row = process_folder(ws, row, tf)
+
+    # No-folder devices
+    no_folder_devs = devices_by_folder.get(None, [])
+    if no_folder_devs and (selected_ids is None or not selected_ids):
+        row = write_folder_row(ws, row, "ללא תיקייה", "#9CA3AF")
+        for i, d in enumerate(no_folder_devs):
+            row = write_device_row(ws, row, d, i % 2 == 0)
+
+    # Save to buffer
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=devices_export.xlsx"},
+    )
+
+
 @router.post("/devices", response_model=DeviceOut, status_code=201)
 async def create_device(
     body: DeviceCreate,
@@ -116,6 +295,7 @@ async def create_device(
     device = DeviceTable(
         device_id=device_id, name=body.name, vendor=body.vendor,
         host=body.host, web_port=body.web_port, sdk_port=body.sdk_port,
+        web_protocol=body.web_protocol,
         username=body.username, password_encrypted=encrypted_password,
         transport_mode=body.transport_mode, is_active=True,
         poll_interval_seconds=body.poll_interval_seconds,
@@ -132,6 +312,34 @@ async def create_device(
             raise HTTPException(status_code=500, detail="Polling policy 'standard' not found. Run seed first.")
         raise HTTPException(status_code=409, detail=f"Device '{body.device_id}' already exists")
     return _device_out(device)
+
+
+# ---------- Bulk reorder ----------
+
+class _ReorderItem(BaseModel):
+    device_id: str
+    display_order: int
+    folder_id: int | None = None
+
+
+class _ReorderRequest(BaseModel):
+    items: list[_ReorderItem]
+
+
+@router.put("/devices/reorder")
+async def reorder_devices(
+    body: _ReorderRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    repo = DeviceRepository(session)
+    for item in body.items:
+        device = await repo.get_by_id(item.device_id)
+        if device:
+            device.display_order = item.display_order
+            if item.folder_id is not None:
+                device.folder_id = item.folder_id
+    await session.commit()
+    return {"ok": True}
 
 
 @router.delete("/devices/{device_id}", status_code=204)
@@ -238,6 +446,68 @@ async def set_ignored_channels(
     return device.ignored_channels or []
 
 
+def _build_time_sync_xml(iso_time: str, timezone: str) -> str:
+    """Build XML body for ISAPI time sync PUT."""
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        "<Time>"
+        "<timeMode>manual</timeMode>"
+        f"<localTime>{iso_time}</localTime>"
+        f"<timeZone>{timezone}</timeZone>"
+        "</Time>"
+    )
+
+
+def _get_israel_time() -> tuple[str, str]:
+    """Return (iso_time, tz_posix) for current Israel time."""
+    from datetime import datetime, timezone as tz, timedelta
+
+    israel_tz_posix = "CST-2:00:00DST01:00:00,M3.5.5/02:00:00,M10.5.0/02:00:00"
+    now_utc = datetime.now(tz.utc)
+    try:
+        from zoneinfo import ZoneInfo
+        now_israel = now_utc.astimezone(ZoneInfo("Asia/Jerusalem"))
+    except Exception:
+        now_israel = now_utc.astimezone(tz(timedelta(hours=2)))
+
+    iso_time = (
+        now_israel.strftime("%Y-%m-%dT%H:%M:%S")
+        + now_israel.strftime("%z")[:3] + ":" + now_israel.strftime("%z")[3:]
+    )
+    return iso_time, israel_tz_posix
+
+
+async def _sync_time_via_sdk(
+    host: str, sdk_port: int, username: str, password: str,
+    xml_body: str, lib_path: str,
+) -> dict:
+    """Sync time via SDK subprocess ISAPI tunnel."""
+    import asyncio
+    cmd = [
+        sys.executable, "-m", "cctv_monitor.polling.sdk_worker",
+        "--host", host,
+        "--port", str(sdk_port),
+        "--user", username,
+        "--password", password,
+        "--lib-path", lib_path,
+        "--sync-time",
+        "--time-xml", xml_body,
+    ]
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
+    if proc.returncode != 0:
+        raise RuntimeError(f"SDK worker exited {proc.returncode}: {stderr.decode(errors='ignore')}")
+    import json as _json
+    result = _json.loads(stdout.decode(errors="ignore"))
+    if not result.get("success"):
+        raise RuntimeError(result.get("error", "SDK time sync failed"))
+    return result
+
+
 @router.post("/devices/{device_id}/sync-time")
 async def sync_device_time(
     device_id: str,
@@ -245,57 +515,206 @@ async def sync_device_time(
     settings: Settings = Depends(get_settings),
     http_client: HttpClientManager = Depends(get_http_client),
 ):
-    """Sync device time to current server time (Israel timezone) via ISAPI."""
-    from datetime import datetime, timezone as tz, timedelta
-
+    """Sync device time to current server time (Israel timezone) via ISAPI or SDK."""
     repo = DeviceRepository(session)
     device = await repo.get_by_id(device_id)
     if device is None:
         raise HTTPException(status_code=404, detail="Device not found")
 
-    if not device.web_port:
-        raise HTTPException(status_code=400, detail="No web port configured — ISAPI required for time sync")
+    if not device.web_port and not (device.sdk_port and settings.HCNETSDK_LIB_PATH):
+        raise HTTPException(status_code=400, detail="No web port or SDK port configured")
 
     password = decrypt_value(device.password_encrypted, settings.ENCRYPTION_KEY)
-    transport = IsapiTransport(http_client)
+    iso_time, israel_tz_posix = _get_israel_time()
+    xml_body = _build_time_sync_xml(iso_time, israel_tz_posix)
+    sdk_available = bool(device.sdk_port and settings.HCNETSDK_LIB_PATH)
+
+    # Try ISAPI first if web_port is configured
+    if device.web_port:
+        try:
+            transport = IsapiTransport(http_client)
+            await transport.connect(device.host, device.web_port, device.username, password, protocol=device.web_protocol)
+            try:
+                result = await transport.set_device_time(iso_time, israel_tz_posix)
+                return {
+                    "success": result["status_code"] < 300,
+                    "time_set": iso_time,
+                    "timezone": israel_tz_posix,
+                    "transport": "isapi",
+                    "status_code": result["status_code"],
+                }
+            finally:
+                try:
+                    await transport.disconnect()
+                except Exception:
+                    pass
+        except IsapiAuthError as exc:
+            raise HTTPException(status_code=502, detail=f"Auth failed: {exc}")
+        except Exception as exc:
+            if not sdk_available:
+                raise HTTPException(status_code=502, detail=f"Time sync failed: {exc}")
+            logger.info("ISAPI time sync failed for device=%s, falling back to SDK: %s", device_id, exc)
+
+    # Fallback to SDK ISAPI tunnel
+    if sdk_available:
+        try:
+            await _sync_time_via_sdk(
+                device.host, device.sdk_port, device.username, password,
+                xml_body, settings.HCNETSDK_LIB_PATH,
+            )
+            return {
+                "success": True,
+                "time_set": iso_time,
+                "timezone": israel_tz_posix,
+                "transport": "sdk",
+            }
+        except Exception as exc:
+            logger.warning("SDK time sync failed for device=%s: %s", device_id, exc)
+            raise HTTPException(status_code=502, detail=f"Time sync failed: {exc}")
+
+    raise HTTPException(status_code=400, detail="No web port or SDK port configured")
+
+
+def _parse_network_interfaces_xml(raw_xml: str) -> list[dict]:
+    """Parse ISAPI /System/Network/interfaces XML into interface dicts."""
+    import xml.etree.ElementTree as ET
+    interfaces = []
     try:
-        await transport.connect(device.host, device.web_port, device.username, password)
+        root = ET.fromstring(raw_xml)
+    except ET.ParseError:
+        return interfaces
+    ns = ""
+    if root.tag.startswith("{"):
+        ns = root.tag.split("}")[0] + "}"
+    for iface in root.iter(f"{ns}NetworkInterface"):
+        iface_id = iface.findtext(f"{ns}id", "")
+        # Collect ALL text values from the subtree for robust parsing
+        def _find_text(*paths: str) -> str | None:
+            for p in paths:
+                el = iface.find(p)
+                if el is not None and el.text:
+                    return el.text.strip()
+            return None
+        ip = _find_text(
+            f".//{ns}IPAddress/{ns}ipAddress",
+            f".//{ns}IPv4Addressing/{ns}ipAddress",
+            f".//{ns}ipAddress",
+        )
+        mask = _find_text(
+            f".//{ns}IPAddress/{ns}subnetMask",
+            f".//{ns}IPv4Addressing/{ns}subnetMask",
+            f".//{ns}subnetMask",
+        )
+        gateway = _find_text(
+            f".//{ns}IPAddress/{ns}DefaultGateway/{ns}ipAddress",
+            f".//{ns}DefaultGateway/{ns}ipAddress",
+            f".//{ns}defaultGateway/{ns}ipAddress",
+            f".//{ns}IPAddress/{ns}ipv4DefaultGateway",
+            f".//{ns}ipv4DefaultGateway",
+        )
+        mac = _find_text(
+            f".//{ns}Link/{ns}MACAddress",
+            f".//{ns}MACAddress",
+            f".//{ns}macAddress",
+        )
+        # DNS
+        dns1 = _find_text(
+            f".//{ns}IPAddress/{ns}PrimaryDNS/{ns}ipAddress",
+            f".//{ns}PrimaryDNS/{ns}ipAddress",
+            f".//{ns}primaryDNS/{ns}ipAddress",
+        )
+        dns2 = _find_text(
+            f".//{ns}IPAddress/{ns}SecondaryDNS/{ns}ipAddress",
+            f".//{ns}SecondaryDNS/{ns}ipAddress",
+            f".//{ns}secondaryDNS/{ns}ipAddress",
+        )
+        interfaces.append({
+            "id": iface_id,
+            "ip": ip,
+            "mask": mask,
+            "gateway": gateway,
+            "mac": mac,
+            "dns1": dns1,
+            "dns2": dns2,
+        })
+    return interfaces
 
-        # Israel timezone: UTC+2 (winter) / UTC+3 (summer DST)
-        # Hikvision POSIX TZ string for Israel
-        israel_tz_posix = "CST-2:00:00DST01:00:00,M3.5.5/02:00:00,M10.5.0/02:00:00"
 
-        # Current server time in Israel timezone
-        israel_offset = timedelta(hours=2)  # base offset
-        now_utc = datetime.now(tz.utc)
-        # Use Python's zoneinfo if available for correct DST
-        try:
-            from zoneinfo import ZoneInfo
-            israel_tz = ZoneInfo("Asia/Jerusalem")
-            now_israel = now_utc.astimezone(israel_tz)
-        except Exception:
-            now_israel = now_utc.astimezone(tz(israel_offset))
+def _parse_network_ports_xml(raw_xml: str) -> list[dict]:
+    """Parse ISAPI /Security/adminAccesses XML into port dicts."""
+    import xml.etree.ElementTree as ET
+    ports = []
+    try:
+        root = ET.fromstring(raw_xml)
+    except ET.ParseError:
+        return ports
+    ns = ""
+    if root.tag.startswith("{"):
+        ns = root.tag.split("}")[0] + "}"
+    for access in root.iter(f"{ns}AdminAccessProtocol"):
+        proto = access.findtext(f"{ns}protocol", "")
+        port_num = access.findtext(f"{ns}portNo", "")
+        enabled = access.findtext(f"{ns}enabled", "true")
+        if proto and port_num:
+            ports.append({
+                "protocol": proto,
+                "port": int(port_num),
+                "enabled": enabled.lower() == "true",
+            })
+    return ports
 
-        iso_time = now_israel.strftime("%Y-%m-%dT%H:%M:%S") + now_israel.strftime("%z")[:3] + ":" + now_israel.strftime("%z")[3:]
 
-        result = await transport.set_device_time(iso_time, israel_tz_posix)
+async def _get_network_via_sdk(host: str, sdk_port: int, username: str, password: str, lib_path: str) -> tuple[list[dict], list[dict]]:
+    """Get network info via SDK ISAPI tunnel (subprocess)."""
+    import json as _json
+    interfaces: list[dict] = []
+    ports: list[dict] = []
 
-        return {
-            "success": result["status_code"] < 300,
-            "time_set": iso_time,
-            "timezone": israel_tz_posix,
-            "status_code": result["status_code"],
-        }
-    except IsapiAuthError as exc:
-        raise HTTPException(status_code=502, detail=f"Auth failed: {exc}")
+    cmd = [
+        sys.executable, "-m", "cctv_monitor.polling.sdk_worker",
+        "--host", host, "--port", str(sdk_port),
+        "--user", username, "--password", password,
+        "--lib-path", lib_path,
+        "--isapi-get", "GET /ISAPI/System/Network/interfaces",
+    ]
+    try:
+        proc = await asyncio.create_subprocess_exec(*cmd, stdout=PIPE, stderr=PIPE)
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
+        result = _json.loads(stdout.decode())
+        if result.get("success") and result.get("response"):
+            interfaces = _parse_network_interfaces_xml(result["response"])
+            if not interfaces:
+                logger.warning("SDK network interfaces: got XML but parsed 0 interfaces. XML[:500]=%s", result["response"][:500])
+        elif result.get("error"):
+            logger.warning("SDK network interfaces error: %s", result["error"])
+        if stderr:
+            logger.debug("SDK network interfaces stderr: %s", stderr.decode(errors="replace").strip())
     except Exception as exc:
-        logger.warning("Time sync failed for device=%s: %s", device_id, exc)
-        raise HTTPException(status_code=502, detail=f"Time sync failed: {exc}")
-    finally:
-        try:
-            await transport.disconnect()
-        except Exception:
-            pass
+        logger.warning("SDK network interfaces failed: %s", exc)
+
+    cmd_ports = [
+        sys.executable, "-m", "cctv_monitor.polling.sdk_worker",
+        "--host", host, "--port", str(sdk_port),
+        "--user", username, "--password", password,
+        "--lib-path", lib_path,
+        "--isapi-get", "GET /ISAPI/Security/adminAccesses",
+    ]
+    try:
+        proc = await asyncio.create_subprocess_exec(*cmd_ports, stdout=PIPE, stderr=PIPE)
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
+        result = _json.loads(stdout.decode())
+        if result.get("success") and result.get("response"):
+            ports = _parse_network_ports_xml(result["response"])
+            if not ports:
+                logger.warning("SDK network ports: got XML but parsed 0 ports. XML[:500]=%s", result["response"][:500])
+        elif result.get("error"):
+            logger.warning("SDK network ports error: %s", result["error"])
+        if stderr:
+            logger.debug("SDK network ports stderr: %s", stderr.decode(errors="replace").strip())
+    except Exception as exc:
+        logger.warning("SDK network ports failed: %s", exc)
+
+    return interfaces, ports
 
 
 @router.get("/devices/{device_id}/network")
@@ -305,81 +724,63 @@ async def get_device_network(
     settings: Settings = Depends(get_settings),
     http_client: HttpClientManager = Depends(get_http_client),
 ):
-    """Get device network configuration via ISAPI."""
-    import xml.etree.ElementTree as ET
-
+    """Get device network configuration via ISAPI (HTTP or SDK tunnel)."""
     repo = DeviceRepository(session)
     device = await repo.get_by_id(device_id)
     if device is None:
         raise HTTPException(status_code=404, detail="Device not found")
 
-    if not device.web_port:
-        raise HTTPException(status_code=400, detail="No web port configured")
-
     password = decrypt_value(device.password_encrypted, settings.ENCRYPTION_KEY)
-    transport = IsapiTransport(http_client)
-    interfaces = []
-    ports = []
-    try:
-        await transport.connect(device.host, device.web_port, device.username, password)
+    interfaces: list[dict] = []
+    ports: list[dict] = []
+    isapi_tried = False
 
-        # Network interfaces
+    # Try ISAPI (HTTP) first
+    if device.web_port:
+        isapi_tried = True
+        transport = IsapiTransport(http_client)
         try:
-            net_result = await transport.get_network_interfaces()
-            raw_xml = net_result.get("raw_xml", "")
-            if raw_xml:
-                root = ET.fromstring(raw_xml)
-                ns = ""
-                if root.tag.startswith("{"):
-                    ns = root.tag.split("}")[0] + "}"
-                for iface in root.iter(f"{ns}NetworkInterface"):
-                    ip_el = iface.find(f".//{ns}ipAddress") or iface.find(f".//{ns}IPAddress")
-                    mask_el = iface.find(f".//{ns}subnetMask") or iface.find(f".//{ns}SubnetMask")
-                    gw_el = iface.find(f".//{ns}DefaultGateway/{ns}ipAddress") or iface.find(f".//{ns}defaultGateway/{ns}ipAddress")
-                    mac_el = iface.find(f".//{ns}MACAddress") or iface.find(f".//{ns}macAddress")
-                    iface_id = iface.findtext(f"{ns}id", "")
-                    interfaces.append({
-                        "id": iface_id,
-                        "ip": ip_el.text if ip_el is not None else None,
-                        "mask": mask_el.text if mask_el is not None else None,
-                        "gateway": gw_el.text if gw_el is not None else None,
-                        "mac": mac_el.text if mac_el is not None else None,
-                    })
+            await transport.connect(device.host, device.web_port, device.username, password, protocol=device.web_protocol)
+
+            try:
+                net_result = await transport.get_network_interfaces()
+                raw_xml = net_result.get("raw_xml", "")
+                if raw_xml:
+                    interfaces = _parse_network_interfaces_xml(raw_xml)
+            except Exception as exc:
+                logger.warning("Failed to get network interfaces for device=%s: %s", device_id, exc)
+
+            try:
+                ports_result = await transport.get_network_ports()
+                raw_xml = ports_result.get("raw_xml", "")
+                if raw_xml:
+                    ports = _parse_network_ports_xml(raw_xml)
+            except Exception as exc:
+                logger.warning("Failed to get ports for device=%s: %s", device_id, exc)
+
+        except IsapiAuthError as exc:
+            raise HTTPException(status_code=502, detail=f"Auth failed: {exc}")
         except Exception as exc:
-            logger.warning("Failed to get network interfaces for device=%s: %s", device_id, exc)
+            logger.warning("ISAPI network failed for device=%s: %s", device_id, exc)
+        finally:
+            try:
+                await transport.disconnect()
+            except Exception:
+                pass
 
-        # Ports
-        try:
-            ports_result = await transport.get_network_ports()
-            raw_xml = ports_result.get("raw_xml", "")
-            if raw_xml:
-                root = ET.fromstring(raw_xml)
-                ns = ""
-                if root.tag.startswith("{"):
-                    ns = root.tag.split("}")[0] + "}"
-                for access in root.iter(f"{ns}AdminAccessProtocol"):
-                    proto = access.findtext(f"{ns}protocol", "")
-                    port_num = access.findtext(f"{ns}portNo", "")
-                    enabled = access.findtext(f"{ns}enabled", "true")
-                    if proto and port_num:
-                        ports.append({
-                            "protocol": proto,
-                            "port": int(port_num),
-                            "enabled": enabled.lower() == "true",
-                        })
-        except Exception as exc:
-            logger.warning("Failed to get ports for device=%s: %s", device_id, exc)
+    # Fallback to SDK ISAPI tunnel if ISAPI failed or not configured
+    sdk_available = device.sdk_port and settings.HCNETSDK_LIB_PATH
+    if not interfaces and not ports and sdk_available:
+        logger.info("Trying SDK ISAPI tunnel for network info device=%s", device_id)
+        interfaces, ports = await _get_network_via_sdk(
+            device.host, device.sdk_port, device.username, password,
+            settings.HCNETSDK_LIB_PATH,
+        )
 
-        return {"interfaces": interfaces, "ports": ports}
-    except IsapiAuthError as exc:
-        raise HTTPException(status_code=502, detail=f"Auth failed: {exc}")
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Failed to get network info: {exc}")
-    finally:
-        try:
-            await transport.disconnect()
-        except Exception:
-            pass
+    if not interfaces and not ports and not isapi_tried and not sdk_available:
+        raise HTTPException(status_code=400, detail="No web port or SDK port configured")
+
+    return {"interfaces": interfaces, "ports": ports}
 
 
 @router.post("/devices/{device_id}/poll", response_model=PollResultOut)
@@ -499,6 +900,7 @@ async def _poll_via_isapi(
     config = DeviceConfig(
         device_id=device.device_id, name=device.name, vendor=vendor,
         host=device.host, web_port=device.web_port, sdk_port=device.sdk_port,
+        web_protocol=device.web_protocol,
         username=device.username, password=password,
         transport_mode=DeviceTransport(device.transport_mode),
         polling_policy_id=device.polling_policy_id, is_active=device.is_active,
@@ -908,6 +1310,7 @@ async def poll_device_stream(
                 config = DeviceConfig(
                     device_id=device.device_id, name=device.name, vendor=vendor,
                     host=device.host, web_port=device.web_port, sdk_port=device.sdk_port,
+                    web_protocol=device.web_protocol,
                     username=device.username, password=password,
                     transport_mode=DeviceTransport(device.transport_mode),
                     polling_policy_id=device.polling_policy_id, is_active=device.is_active,
@@ -973,6 +1376,9 @@ async def poll_device_stream(
                 pass
             return
 
+        # Ignored channels — exclude from all counts/reports
+        ignored = {str(ch) for ch in (device.ignored_channels or [])}
+
         # ── ISAPI path ──
         if transport_used == "isapi" and driver is not None:
             start_t = _time.monotonic()
@@ -992,9 +1398,10 @@ async def poll_device_stream(
             yield _sse("cameras", "running", "Getting camera statuses...")
             try:
                 cameras_raw = await driver.get_camera_statuses()
-                online = sum(1 for c in cameras_raw if c.status.value == "online")
+                monitored = [c for c in cameras_raw if str(c.channel_id) not in ignored]
+                online = sum(1 for c in monitored if c.status.value == "online")
                 yield _sse("cameras", "success",
-                           f"{len(cameras_raw)} cameras, {online} online")
+                           f"{len(monitored)} cameras, {online} online")
             except Exception as exc:
                 yield _sse("cameras", "error", str(exc))
 
@@ -1015,20 +1422,24 @@ async def poll_device_stream(
             rec_map: dict[str, str] = {}
             yield _sse("recording", "running", "Checking recording status...")
             try:
+                monitored_ids = [c.channel_id for c in cameras_raw if str(c.channel_id) not in ignored]
                 if device.sdk_port and settings.HCNETSDK_LIB_PATH:
                     from cctv_monitor.polling.sdk_subprocess import poll_device_via_sdk_recordings
                     sdk_recs = await poll_device_via_sdk_recordings(
                         host=device.host, port=device.sdk_port,
                         username=device.username, password=password,
                         lib_path=settings.HCNETSDK_LIB_PATH,
-                        channels=[c.channel_id for c in cameras_raw],
+                        channels=monitored_ids,
                     )
                     for r in sdk_recs:
-                        rec_map[r.get("channel_id", "")] = r.get("recording", "unknown")
+                        ch = r.get("channel_id", "")
+                        if str(ch) not in ignored:
+                            rec_map[ch] = r.get("recording", "unknown")
                 if not rec_map:
                     rec_statuses = await driver.get_recording_statuses()
                     for r in rec_statuses:
-                        rec_map[r.channel_id] = r.status.value
+                        if str(r.channel_id) not in ignored:
+                            rec_map[r.channel_id] = r.status.value
                 recording_count = sum(1 for v in rec_map.values() if v == "recording")
                 yield _sse("recording", "success",
                            f"{recording_count}/{len(rec_map)} recording" if rec_map else "Not available")
@@ -1062,10 +1473,10 @@ async def poll_device_stream(
 
             response_time = (_time.monotonic() - start_t) * 1000
             now = datetime.now(timezone.utc)
-            online = sum(1 for c in cameras_raw if c.status.value == "online")
+            all_online = sum(1 for c in cameras_raw if c.status.value == "online")
             disk_ok = all(d.status.value == "ok" for d in disks_raw) if disks_raw else True
 
-            # Save results
+            # Save results (all cameras in JSON, ignored filtering at read time via _device_out)
             cameras_json = [
                 {"channel_id": c.channel_id, "channel_name": c.channel_name,
                  "status": c.status.value, "ip_address": c.ip_address,
@@ -1082,9 +1493,13 @@ async def poll_device_stream(
                  "smart_status": d.smart_status}
                 for d in disks_raw
             ]
+            # Monitored counts (for SSE display and done message)
+            monitored = [c for c in cameras_raw if str(c.channel_id) not in ignored]
+            mon_online = sum(1 for c in monitored if c.status.value == "online")
+
             health_json = {
                 "reachable": True, "camera_count": len(cameras_raw),
-                "online_cameras": online, "offline_cameras": len(cameras_raw) - online,
+                "online_cameras": all_online, "offline_cameras": len(cameras_raw) - all_online,
                 "disk_ok": disk_ok, "response_time_ms": response_time,
                 "checked_at": now.isoformat(),
                 "web_port_open": web_port_open, "sdk_port_open": sdk_port_open,
@@ -1105,11 +1520,54 @@ async def poll_device_stream(
             health_log_repo = DeviceHealthLogRepository(session)
             await health_log_repo.insert(
                 device_id=device_id, reachable=True,
-                camera_count=len(cameras_raw), online_cameras=online,
-                offline_cameras=len(cameras_raw) - online,
+                camera_count=len(cameras_raw), online_cameras=all_online,
+                offline_cameras=len(cameras_raw) - all_online,
                 disk_ok=disk_ok, response_time_ms=response_time,
             )
             await session.commit()
+
+            # Evaluate alerts (resolve stale ones, create new)
+            try:
+                from cctv_monitor.alerts.engine import AlertEngine
+                from cctv_monitor.models.device_health import DeviceHealthSummary
+                from cctv_monitor.storage.repositories import AlertRepository
+                from cctv_monitor.storage.tables import AlertTable
+                from cctv_monitor.core.types import AlertStatus as _AS
+
+                _eng = AlertEngine()
+                _mon = [c for c in cameras_json if str(c.get("channel_id", "")) not in ignored]
+                _rec_t = sum(1 for c in _mon if c.get("recording"))
+                _rec_ok = sum(1 for c in _mon if c.get("recording") == "recording")
+                _summary = DeviceHealthSummary(
+                    device_id=device_id, reachable=True,
+                    camera_count=len(monitored), online_cameras=mon_online,
+                    offline_cameras=len(monitored) - mon_online,
+                    disk_ok=disk_ok,
+                    recording_ok=(_rec_ok == _rec_t) if _rec_t > 0 else True,
+                    response_time_ms=response_time,
+                    checked_at=now,
+                )
+                _alert_repo = AlertRepository(session)
+                _active = await _alert_repo.get_active_alerts(device_id)
+                from cctv_monitor.models.alert import AlertEvent as _AE
+                _active_events = [
+                    _AE(device_id=r.device_id, alert_type=r.alert_type, severity=r.severity,
+                        message=r.message, source=r.source, status=r.status,
+                        created_at=r.created_at, id=r.id, channel_id=r.channel_id, resolved_at=r.resolved_at)
+                    for r in _active
+                ]
+                _new, _resolved = _eng.evaluate(_summary, _active_events)
+                for a in _new:
+                    await _alert_repo.create_alert(AlertTable(
+                        device_id=a.device_id, alert_type=a.alert_type, severity=a.severity,
+                        message=a.message, source=a.source, status=_AS.ACTIVE, created_at=a.created_at,
+                    ))
+                for a in _resolved:
+                    if a.id is not None:
+                        await _alert_repo.resolve_alert(a.id)
+                await session.commit()
+            except Exception:
+                pass
 
             try:
                 await driver.disconnect()
@@ -1117,7 +1575,7 @@ async def poll_device_stream(
                 pass
 
             yield _sse("done", "success",
-                        f"Poll complete — {len(cameras_raw)} cameras, {online} online, "
+                        f"Poll complete — {len(monitored)} cameras, {mon_online} online, "
                         f"disks {'OK' if disk_ok else 'ERROR'}, {round(response_time)}ms",
                         response_time_ms=round(response_time, 1))
 
@@ -1193,8 +1651,9 @@ async def poll_device_stream(
                 yield _sse("device_info", "success", "Connected")
 
             cameras = result.get("cameras", [])
-            online = sum(1 for c in cameras if c.get("online") is True)
-            yield _sse("cameras", "success", f"{len(cameras)} cameras, {online} online")
+            monitored_cams = [c for c in cameras if str(c.get("channel_id", "")) not in ignored]
+            online = sum(1 for c in monitored_cams if c.get("online") is True)
+            yield _sse("cameras", "success", f"{len(monitored_cams)} cameras, {online} online")
 
             disks = result.get("disks", [])
             disk_ok = all(d.get("status") in ("normal", "ok") for d in disks) if disks else True
@@ -1207,7 +1666,9 @@ async def poll_device_stream(
             recordings = result.get("recordings", [])
             rec_map: dict[str, str] = {}
             for r in recordings:
-                rec_map[r.get("channel_id", "")] = r.get("recording", "unknown")
+                ch = r.get("channel_id", "")
+                if str(ch) not in ignored:
+                    rec_map[ch] = r.get("recording", "unknown")
             if rec_map:
                 recording_count = sum(1 for v in rec_map.values() if v == "recording")
                 yield _sse("recording", "success", f"{recording_count}/{len(rec_map)} recording")
@@ -1255,9 +1716,10 @@ async def poll_device_stream(
                  "smart_status": d.get("smart_status")}
                 for d in disks
             ]
+            all_online_sdk = sum(1 for c in cameras if c.get("online") is True)
             health_json = {
                 "reachable": True, "camera_count": len(cameras),
-                "online_cameras": online, "offline_cameras": len(cameras) - online,
+                "online_cameras": all_online_sdk, "offline_cameras": len(cameras) - all_online_sdk,
                 "disk_ok": disk_ok, "response_time_ms": response_time,
                 "checked_at": now.isoformat(),
                 "web_port_open": web_port_open, "sdk_port_open": sdk_port_open,
@@ -1281,14 +1743,57 @@ async def poll_device_stream(
             health_log_repo = DeviceHealthLogRepository(session)
             await health_log_repo.insert(
                 device_id=device_id, reachable=True,
-                camera_count=len(cameras), online_cameras=online,
-                offline_cameras=len(cameras) - online,
+                camera_count=len(cameras), online_cameras=all_online_sdk,
+                offline_cameras=len(cameras) - all_online_sdk,
                 disk_ok=disk_ok, response_time_ms=response_time,
             )
             await session.commit()
 
+            # Evaluate alerts (resolve stale ones, create new)
+            try:
+                from cctv_monitor.alerts.engine import AlertEngine
+                from cctv_monitor.models.device_health import DeviceHealthSummary
+                from cctv_monitor.storage.repositories import AlertRepository
+                from cctv_monitor.storage.tables import AlertTable
+                from cctv_monitor.core.types import AlertStatus as _AS
+
+                _eng = AlertEngine()
+                _mon = [c for c in cameras_json if str(c.get("channel_id", "")) not in ignored]
+                _rec_t = sum(1 for c in _mon if c.get("recording"))
+                _rec_ok = sum(1 for c in _mon if c.get("recording") == "recording")
+                _summary = DeviceHealthSummary(
+                    device_id=device_id, reachable=True,
+                    camera_count=len(monitored_cams), online_cameras=online,
+                    offline_cameras=len(monitored_cams) - online,
+                    disk_ok=disk_ok,
+                    recording_ok=(_rec_ok == _rec_t) if _rec_t > 0 else True,
+                    response_time_ms=response_time,
+                    checked_at=now,
+                )
+                _alert_repo = AlertRepository(session)
+                _active = await _alert_repo.get_active_alerts(device_id)
+                from cctv_monitor.models.alert import AlertEvent as _AE
+                _active_events = [
+                    _AE(device_id=r.device_id, alert_type=r.alert_type, severity=r.severity,
+                        message=r.message, source=r.source, status=r.status,
+                        created_at=r.created_at, id=r.id, channel_id=r.channel_id, resolved_at=r.resolved_at)
+                    for r in _active
+                ]
+                _new, _resolved = _eng.evaluate(_summary, _active_events)
+                for a in _new:
+                    await _alert_repo.create_alert(AlertTable(
+                        device_id=a.device_id, alert_type=a.alert_type, severity=a.severity,
+                        message=a.message, source=a.source, status=_AS.ACTIVE, created_at=a.created_at,
+                    ))
+                for a in _resolved:
+                    if a.id is not None:
+                        await _alert_repo.resolve_alert(a.id)
+                await session.commit()
+            except Exception:
+                pass
+
             yield _sse("done", "success",
-                        f"Poll complete — {len(cameras)} cameras, {online} online, "
+                        f"Poll complete — {len(monitored_cams)} cameras, {online} online, "
                         f"disks {'OK' if disk_ok else 'ERROR'}, {round(response_time)}ms",
                         response_time_ms=round(response_time, 1))
 
@@ -1424,7 +1929,7 @@ async def get_snapshot(
             if not prefer_sdk and device.web_port:
                 transport = IsapiTransport(http_client)
                 try:
-                    await transport.connect(device.host, device.web_port, device.username, password)
+                    await transport.connect(device.host, device.web_port, device.username, password, protocol=device.web_protocol)
                     image_data = await transport.get_snapshot(channel_id)
                 except IsapiAuthError as auth_exc:
                     errors.append(f"ISAPI: {auth_exc}")
