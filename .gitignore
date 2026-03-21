@@ -18,3 +18,4 @@ third_party/hikvision/sdk/linux-64/
 .coverage
 htmlcov/
 .ruff_cache/
+backups/
