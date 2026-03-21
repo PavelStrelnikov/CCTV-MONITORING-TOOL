@@ -15,6 +15,7 @@ import useMediaQuery from '@mui/material/useMediaQuery';
 import { useTheme } from '@mui/material/styles';
 import Brightness4Icon from '@mui/icons-material/Brightness4';
 import Brightness7Icon from '@mui/icons-material/Brightness7';
+import ExitToAppIcon from '@mui/icons-material/ExitToApp';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import DashboardIcon from '@mui/icons-material/Dashboard';
@@ -25,7 +26,9 @@ import NotificationsIcon from '@mui/icons-material/Notifications';
 import SettingsIcon from '@mui/icons-material/Settings';
 import VideocamIcon from '@mui/icons-material/Videocam';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 import { useThemeMode } from '../theme.ts';
+import { clearAuthToken } from '../api/client';
 
 const DRAWER_WIDTH = 220;
 const DRAWER_COLLAPSED = 64;
@@ -53,6 +56,7 @@ const AppBarClock = memo(function AppBarClock({ locale }: { locale: string }) {
 export default function Layout() {
   const { mode, toggleTheme } = useThemeMode();
   const { t, i18n } = useTranslation();
+  const navigate = useNavigate();
   const muiTheme = useTheme();
   const isMdUp = useMediaQuery(muiTheme.breakpoints.up('md'));
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -143,6 +147,15 @@ export default function Layout() {
           <IconButton onClick={toggleTheme} color="inherit" size="small" sx={{ ml: 0.5 }}>
             {mode === 'dark' ? <Brightness7Icon /> : <Brightness4Icon />}
           </IconButton>
+          <Tooltip title={t('nav.logout', 'Logout')}>
+            <IconButton
+              color="inherit"
+              size="small"
+              onClick={() => { clearAuthToken(); navigate('/login', { replace: true }); }}
+            >
+              <ExitToAppIcon />
+            </IconButton>
+          </Tooltip>
         </Toolbar>
       </AppBar>
 

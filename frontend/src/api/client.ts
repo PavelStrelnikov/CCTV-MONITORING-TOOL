@@ -1,12 +1,35 @@
 import type { Device, DeviceCreate, DeviceUpdate, DeviceDetail, PollResult, Overview, Alert, HealthLogEntry, PollLogEntry, SystemSettings, Tag, Folder, FolderTree } from '../types';
 
 const BASE = '/api';
+const TOKEN_KEY = 'cctv-auth-token';
+
+export function getAuthToken(): string | null {
+  return localStorage.getItem(TOKEN_KEY);
+}
+
+export function setAuthToken(token: string): void {
+  localStorage.setItem(TOKEN_KEY, token);
+}
+
+export function clearAuthToken(): void {
+  localStorage.removeItem(TOKEN_KEY);
+}
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  const token = getAuthToken();
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
   const response = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     ...options,
   });
+  if (response.status === 401) {
+    clearAuthToken();
+    window.location.href = '/login';
+    throw new Error('Unauthorized');
+  }
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     throw new Error(body.detail || `HTTP ${response.status}`);
@@ -14,6 +37,23 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   if (response.status === 204) return undefined as T;
   return response.json();
 }
+
+export const authApi = {
+  login: async (username: string, password: string): Promise<string> => {
+    const response = await fetch(`${BASE}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    });
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      throw new Error(body.detail || `HTTP ${response.status}`);
+    }
+    const data = await response.json();
+    setAuthToken(data.access_token);
+    return data.access_token;
+  },
+};
 
 export const api = {
   getDevices: () => request<Device[]>('/devices'),
@@ -109,8 +149,11 @@ export const api = {
     ),
 
   // Snapshot URL (timestamp param for cache-busting on refresh)
-  getSnapshotUrl: (deviceId: string, channelId: string) =>
-    `${BASE}/devices/${deviceId}/snapshot/${channelId}?t=${Math.floor(Date.now() / 30000)}`,
+  getSnapshotUrl: (deviceId: string, channelId: string) => {
+    const t = Math.floor(Date.now() / 30000);
+    const token = getAuthToken();
+    return `${BASE}/devices/${deviceId}/snapshot/${channelId}?t=${t}${token ? `&token=${token}` : ''}`;
+  },
 
   // Folders
   getFolders: () => request<FolderTree[]>('/folders'),

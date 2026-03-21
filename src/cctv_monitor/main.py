@@ -64,7 +64,7 @@ async def main() -> None:
     scheduler.start()
 
     # API
-    app = create_app()
+    app = create_app(settings)
 
     # Store shared state on app for dependency injection
     app.state.settings = settings

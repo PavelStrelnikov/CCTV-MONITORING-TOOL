@@ -1,0 +1,21 @@
+{$DOMAIN:localhost} {
+    # API reverse proxy
+    handle /api/* {
+        reverse_proxy backend:8001 {
+            # SSE poll-stream: flush immediately
+            flush_interval -1
+        }
+    }
+
+    # Health check (no /api prefix)
+    handle /health {
+        reverse_proxy backend:8001
+    }
+
+    # Frontend SPA
+    handle {
+        root * /srv/frontend
+        try_files {path} /index.html
+        file_server
+    }
+}

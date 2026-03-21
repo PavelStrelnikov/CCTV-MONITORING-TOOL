@@ -10,6 +10,7 @@ import { useTranslation } from 'react-i18next';
 import './i18n.ts';
 import { buildTheme, ThemeContext, type ThemeMode } from './theme.ts';
 import Layout from './components/Layout.tsx';
+import Login from './pages/Login.tsx';
 import Dashboard from './pages/Dashboard.tsx';
 import DeviceList from './pages/DeviceList.tsx';
 import AddDevice from './pages/AddDevice.tsx';
@@ -55,6 +56,7 @@ export default function App() {
           <CssBaseline />
           <BrowserRouter>
             <Routes>
+              <Route path="/login" element={<Login />} />
               <Route element={<Layout />}>
                 <Route path="/" element={<Dashboard />} />
                 <Route path="/devices" element={<DeviceList />} />

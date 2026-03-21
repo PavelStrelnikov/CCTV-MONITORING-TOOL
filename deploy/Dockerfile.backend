@@ -1,0 +1,31 @@
+FROM python:3.12-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq-dev gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Install dependencies first (layer cache)
+COPY pyproject.toml .
+RUN pip install --no-cache-dir .
+
+# Install playwright browsers for PDF report generation
+RUN playwright install --with-deps chromium
+
+# Copy application code
+COPY src/ src/
+COPY migrations/ migrations/
+COPY alembic.ini .
+
+# Hikvision SDK (Linux .so files)
+COPY third_party/hikvision/sdk/linux-64/ /opt/hikvision-sdk/
+ENV LD_LIBRARY_PATH=/opt/hikvision-sdk
+
+# Entrypoint
+COPY deploy/docker-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+EXPOSE 8001
+
+ENTRYPOINT ["/entrypoint.sh"]

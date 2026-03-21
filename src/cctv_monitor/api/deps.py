@@ -1,3 +1,4 @@
+import hmac
 from collections.abc import AsyncGenerator
 
 from fastapi import Depends, Header, HTTPException, Request
@@ -67,5 +68,5 @@ def verify_internal_api_token(
     expected = settings.INTERNAL_API_TOKEN
     if not expected:
         raise HTTPException(status_code=503, detail="Internal API token is not configured")
-    if x_internal_token != expected:
+    if not hmac.compare_digest(x_internal_token or "", expected):
         raise HTTPException(status_code=401, detail="Invalid internal token")
