@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
+import { getAuthToken } from '../api/client';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
@@ -69,7 +70,11 @@ export default function PollDialog({ open, onClose, deviceId, deviceName, onPoll
     setFinalDetail('');
 
     try {
-      const response = await fetch(`/api/devices/${deviceId}/poll-stream`);
+      const token = getAuthToken();
+      const url = token
+        ? `/api/devices/${deviceId}/poll-stream?token=${encodeURIComponent(token)}`
+        : `/api/devices/${deviceId}/poll-stream`;
+      const response = await fetch(url);
       if (!response.ok || !response.body) {
         setDone(true);
         setFinalStatus('error');
