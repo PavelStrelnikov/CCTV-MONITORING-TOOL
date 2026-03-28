@@ -508,6 +508,23 @@ def build_router(api_client: TelegramApiClient) -> Router:
             return False, None
         try:
             allowed, role = await get_access(api_client, user.id)
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 503:
+                await message.answer(
+                    "Telegram internal API is not configured on the backend. Restart the backend after setting INTERNAL_API_TOKEN."
+                )
+            elif exc.response.status_code == 401:
+                await message.answer(
+                    "Telegram internal API token mismatch. Restart the backend and bot so both use the same INTERNAL_API_TOKEN."
+                )
+            else:
+                await message.answer("Service temporarily unavailable.")
+            return False, None
+        except httpx.HTTPError:
+            await message.answer("Service temporarily unavailable.")
+            return False, None
+
+        try:
             await api_client.write_audit(
                 telegram_user_id=user.id,
                 telegram_chat_id=message.chat.id if message.chat else None,
@@ -515,8 +532,8 @@ def build_router(api_client: TelegramApiClient) -> Router:
                 status="ok" if allowed else "denied",
             )
         except httpx.HTTPError:
-            await message.answer("Service temporarily unavailable.")
-            return False, None
+            # Audit should be best-effort and must not block bot actions.
+            pass
         if not allowed:
             await message.answer("Access denied. Contact system administrator.")
         return allowed, role

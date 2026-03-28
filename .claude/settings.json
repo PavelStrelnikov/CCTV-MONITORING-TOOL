@@ -100,7 +100,17 @@
       "Bash(powershell -Command \"Stop-Process -Name python -Force\")",
       "Bash(./venv/Scripts/python.exe -c \"from cctv_monitor.api.routes.devices import router; print\\(''OK''\\)\")",
       "mcp__context7__resolve-library-id",
-      "Bash(pip install pymupdf)"
+      "Bash(pip install pymupdf)",
+      "Bash(PYTHONPATH=src python -m cctv_monitor.main)",
+      "Read(//c/Users/Pavel/AppData/Local/Temp/claude/c--Users-Pavel-DEV-CCTV-Monitoring-Tool/ba936796-dca8-4b37-8ada-6f89b4dff80f/tasks/**)",
+      "Read(//c/Users/Pavel/DEV/CCTV Monitoring Tool/$USERPROFILE/**)",
+      "Read(//c/Users/Pavel/DEV/CCTV Monitoring Tool/$HOME/**)",
+      "Read(//c/Users/Pavel/**)",
+      "Bash(\"/c/Users/Pavel/DEV/CCTV Monitoring:*)",
+      "Bash(./venv/Scripts/pip install:*)",
+      "Bash(taskkill //PID 13764 //F)",
+      "Bash(cmd.exe /c stop.bat)",
+      "Bash(cmd.exe /c start.bat)"
     ],
     "deny": [
       "Read(./.env)",

@@ -67,6 +67,13 @@ def verify_internal_api_token(
     settings: Settings = request.app.state.settings
     expected = settings.INTERNAL_API_TOKEN
     if not expected:
+        # Reload from .env so Telegram internal routes can recover after
+        # runtime config changes without depending on stale app state.
+        refreshed = Settings()
+        expected = refreshed.INTERNAL_API_TOKEN
+        if expected:
+            settings.INTERNAL_API_TOKEN = expected
+    if not expected:
         raise HTTPException(status_code=503, detail="Internal API token is not configured")
     if not hmac.compare_digest(x_internal_token or "", expected):
         raise HTTPException(status_code=401, detail="Invalid internal token")
