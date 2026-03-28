@@ -31,6 +31,11 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
         if not path.startswith("/api/"):
             return await call_next(request)
 
+        # Internal service token (Telegram bot → backend)
+        internal_token = request.headers.get("x-internal-token")
+        if internal_token and internal_token == settings.INTERNAL_API_TOKEN:
+            return await call_next(request)
+
         # Extract token from Authorization header or ?token= query param
         token = None
         auth_header = request.headers.get("authorization", "")
