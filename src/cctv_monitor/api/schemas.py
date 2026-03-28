@@ -90,7 +90,7 @@ class DeviceOut(BaseModel):
     firmware_version: str | None = None
     last_poll_at: datetime | None = None
     poll_interval_seconds: int | None = None
-    tags: list[TagOut] = []
+    tags: list["TagOut"] = []
     ignored_channels: list[str] = []
     folder_id: int | None = None
     folder_path: str | None = None
@@ -197,3 +197,6 @@ class OverviewOut(BaseModel):
     recording_ok: int
     time_drift_issues: int
     devices: list[OverviewDeviceSummary] = []
+
+# Rebuild models that use forward references
+DeviceOut.model_rebuild()
