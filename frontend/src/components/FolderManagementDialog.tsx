@@ -269,7 +269,7 @@ export default function FolderManagementDialog({ open, onClose, folders, onFolde
                 value={editParentId ?? ''}
                 onChange={(e) => {
                   const val = e.target.value;
-                  setEditParentId(val === '' ? null : Number(val));
+                  setEditParentId(String(val) === '' ? null : Number(val));
                 }}
                 label={t('folders.parentFolder')}
               >

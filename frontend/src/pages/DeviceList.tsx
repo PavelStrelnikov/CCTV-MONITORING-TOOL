@@ -366,8 +366,6 @@ export default function DeviceList() {
   const isDark = mode === 'dark';
   const borderColor = isDark ? '#1E293B' : '#D5D9E2';
   const headerBg = isDark ? '#0F172A' : '#E8E5E0';
-  const stripeBg = isDark ? '#0F172A' : '#EBE8E3';
-  const hoverBg = isDark ? '#1E293B' : '#E0DDD7';
 
   function statusChip(d: Device) {
     if (!d.last_health) return <Chip label={t('status.unknown')} size="small" />;
@@ -631,7 +629,7 @@ export default function DeviceList() {
                       </TableCell>
                     </TableRow>
                   )}
-                  {visibleGroups.map((group, gi) => {
+                  {visibleGroups.map((group) => {
                     const onlineCount = group.devices.filter((d) => d.last_health?.reachable).length;
                     const currentTab = tabItems[safeTab];
                     const isAllTab = currentTab?.id === 'all';
@@ -641,7 +639,7 @@ export default function DeviceList() {
                       || (!isAllTab && !isNoneTab && group.subfolder !== null);
                     return [
                       showHeader && renderGroupHeader(group.subfolder, group.color, group.devices.length, onlineCount),
-                      ...group.devices.map((d, di) => {
+                      ...group.devices.map((d) => {
                         const h = d.last_health;
                         return (
                           <SortableDeviceRow key={d.device_id} d={d}>
